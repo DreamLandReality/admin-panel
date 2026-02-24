@@ -6,21 +6,37 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "push-template": "tsx scripts/push-template.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@aws-sdk/client-s3": "^3.995.0",
+    "@aws-sdk/s3-request-presigner": "^3.995.0",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.97.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dotenv": "^17.3.1",
+    "lucide-react": "^0.440.0",
+    "next": "14.2.15",
+    "next-themes": "^0.3.0",
     "react": "^18",
     "react-dom": "^18",
-    "next": "14.2.15"
+    "tailwind-merge": "^2.6.1",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
-    "typescript": "^5",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.15",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.15"
+    "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
   }
 }

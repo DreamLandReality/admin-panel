@@ -2,26 +2,86 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 0 0% 98%;      /* #FAFAFA */
+    --surface: 0 0% 100%;        /* #FFFFFF */
+    --foreground: 222 47% 11%;   /* #0F172A */
+    --foreground-muted: 215 14% 65%; /* #94A3B8 */
+    --foreground-inverse: 0 0% 93%; /* #EDEDED */
+    
+    --accent: 36 38% 63%;        /* #C6A87C */
+    --accent-foreground: 0 0% 100%;
+    --accent-hover: 36 30% 55%;  /* darker gold */
+    --accent-muted: 36 38% 63%;  /* with opacity later */
+    
+    --border: 214 32% 91%;       /* #E2E8F0 */
+    --border-hover: 214 32% 80%;
+    
+    /* Sidebar is always dark */
+    --sidebar-bg: 222 47% 11%;   /* #0F172A */
+    --sidebar-text: 215 14% 65%; /* Gray 500 equivalent */
+    --sidebar-text-active: 0 0% 100%;
+    --sidebar-accent: 36 38% 63%; /* #C6A87C */
+    
+    /* Status colors */
+    --success: 142 71% 45%;      /* #22C55E */
+    --success-bg: 141 84% 93%;   /* #DCFCE7 green-100 */
+    --warning: 38 92% 50%;       /* #F59E0B */
+    --warning-bg: 48 96% 89%;    /* #FEF3C7 amber-100 */
+    --error: 0 84% 60%;          /* #EF4444 */
+    --error-bg: 0 93% 94%;       /* #FEE2E2 red-100 */
+    --info: 217 91% 60%;         /* #3B82F6 */
+    --info-bg: 214 100% 91%;     /* #DBEAFE blue-100 */
+    
+    /* Shadows */
+    --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.1);
+    --shadow-glow: 0 0 15px rgba(198, 168, 124, 0.3);
+    
+    --radius-md: 0.5rem;   /* 8px */
+    --radius-lg: 0.75rem;  /* 12px */
+  }
+
+  .dark {
+    --background: 240 10% 4%;    /* #09090B */
+    --surface: 0 0% 7%;          /* #121212 */
+    --foreground: 0 0% 93%;      /* #EDEDED */
+    --foreground-muted: 0 0% 45%;/* #737373 */
+    --foreground-inverse: 222 47% 11%; /* #0F172A */
+
+    --border: 0 0% 100%;         /* will use opacity /8 for 8% */
+    --border-hover: 0 0% 100%;   /* opacity /15 */
+
+    /* Sidebar matches background in dark mode */
+    --sidebar-bg: 240 10% 4%;    /* #09090B */
+
+    /* Editor-specific surfaces */
+    --editor-bg: 240 6% 4%;         /* #0a0a0b */
+    --editor-surface: 240 4% 6%;    /* #0f0f10 */
+    --editor-dropdown: 240 3% 10%;  /* #1a1a1c */
+
+    --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+    --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 15px rgba(198, 168, 124, 0.15);
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 400ms ease-out;
 }
