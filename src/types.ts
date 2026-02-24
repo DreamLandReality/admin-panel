@@ -299,3 +299,20 @@ export interface APIResponse<T> {
 }
 
 export type ViewMode = 'desktop' | 'tablet' | 'mobile'
+
+// ─── Deploy Streaming Types ─────────────────────────────────────────────────
+
+export type DeployStepId =
+  | 'upload_images'
+  | 'create_repo'
+  | 'inject_manifest'
+  | 'cloudflare_setup'
+  | 'save_record'
+  | 'cf_build'
+
+export interface DeployEvent {
+  step: DeployStepId
+  status: 'running' | 'done' | 'error'
+  message: string
+  data?: { siteUrl?: string; repoUrl?: string; siteSlug?: string }
+}

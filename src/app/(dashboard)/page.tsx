@@ -43,7 +43,7 @@ export default async function DashboardHomePage() {
       <SyncHeaderStats stats={stats} />
 
       {typedDeployments.length > 0 ? (
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {typedDeployments.map((deployment, idx) => (
             <DeploymentCard
               key={deployment.id}

@@ -40,14 +40,20 @@ export default async function TemplatesPage() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 max-w-5xl">
-      {typedTemplates.map((template) => (
-        <TemplateCard
-          key={template.id}
-          template={template}
-          href={ROUTES.template(template.slug)}
-        />
-      ))}
+    <div className="max-w-5xl">
+      <div className={
+        typedTemplates.length === 1
+          ? 'grid gap-5 max-w-xs'
+          : 'grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+      }>
+        {typedTemplates.map((template) => (
+          <TemplateCard
+            key={template.id}
+            template={template}
+            href={ROUTES.template(template.slug)}
+          />
+        ))}
+      </div>
     </div>
   )
 }

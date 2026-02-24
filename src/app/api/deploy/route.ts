@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createRateLimiter } from '@/lib/rate-limit'
+import { randomUUID } from 'crypto'
 import * as path from 'path'
+import type { DeployEvent } from '@/types'
 
 /**
  * POST /api/deploy
@@ -191,8 +193,8 @@ async function injectManifestViaApi(
 // ─── Step 3: Deploy to Cloudflare Pages ──────────────────────────────────────
 
 async function deployToCloudflare(siteSlug: string, org: string): Promise<string> {
-    const siteRepo = `site-${siteSlug}`
-    const siteUrl = `https://${siteRepo}.pages.dev`
+    const projectName = `site-${siteSlug}`
+    const siteUrl = `https://${projectName}.pages.dev`
     const cfToken = process.env.CLOUDFLARE_API_TOKEN
     const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID
 
@@ -205,30 +207,43 @@ async function deployToCloudflare(siteSlug: string, org: string): Promise<string
         'Content-Type': 'application/json'
     }
 
-    // Check if project exists
-    const checkProject = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects/${siteRepo}`,
+    // Check if CF Pages project already exists
+    const checkResponse = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects/${projectName}`,
         { headers: cfHeaders }
     )
 
-    if (checkProject.ok) {
-        // Trigger redeployment
-        const redeployRes = await fetch(
-            `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects/${siteRepo}/deployments`,
-            { method: 'POST', headers: cfHeaders }
+    if (checkResponse.ok) {
+        // Project exists — update the SITE_URL env var so the template knows its own URL
+        const updateResponse = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects/${projectName}`,
+            {
+                method: 'PATCH',
+                headers: cfHeaders,
+                body: JSON.stringify({
+                    deployment_configs: {
+                        production: {
+                            env_vars: {
+                                SITE_URL: { type: 'plain_text', value: siteUrl }
+                            }
+                        }
+                    }
+                })
+            }
         )
-        if (!redeployRes.ok) {
-            console.error('[deploy] CF redeployment trigger failed:', await redeployRes.text().catch(() => 'unknown'))
+        if (!updateResponse.ok) {
+            const error = await updateResponse.json().catch(() => ({}))
+            console.warn('[deploy] CF env var update failed:', error?.errors?.[0]?.message ?? 'unknown')
         }
     } else {
-        // Create new project
-        const createRes = await fetch(
+        // New site — create CF Pages project connected to the GitHub repo
+        const createResponse = await fetch(
             `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects`,
             {
                 method: 'POST',
                 headers: cfHeaders,
                 body: JSON.stringify({
-                    name: siteRepo,
+                    name: projectName,
                     production_branch: 'main',
                     build_config: {
                         build_command: 'npm run build',
@@ -238,22 +253,58 @@ async function deployToCloudflare(siteSlug: string, org: string): Promise<string
                         type: 'github',
                         config: {
                             owner: org,
-                            repo_name: siteRepo,
+                            repo_name: projectName,
                             production_branch: 'main'
                         }
                     }
                 })
             }
         )
-        if (!createRes.ok) {
-            console.error('[deploy] CF project creation failed:', await createRes.text().catch(() => 'unknown'))
+
+        if (!createResponse.ok) {
+            const error = await createResponse.json().catch(() => ({}))
+            throw new Error(`Failed to create CF Pages project: ${error?.errors?.[0]?.message ?? 'unknown'}`)
         }
+
+        // Set SITE_URL env var after project creation
+        const envResponse = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects/${projectName}`,
+            {
+                method: 'PATCH',
+                headers: cfHeaders,
+                body: JSON.stringify({
+                    deployment_configs: {
+                        production: {
+                            env_vars: {
+                                SITE_URL: { type: 'plain_text', value: siteUrl }
+                            }
+                        }
+                    }
+                })
+            }
+        )
+        if (!envResponse.ok) {
+            const error = await envResponse.json().catch(() => ({}))
+            console.warn('[deploy] CF env var set failed:', error?.errors?.[0]?.message ?? 'unknown')
+        }
+    }
+
+    // Always explicitly trigger a build. We cannot rely solely on the GitHub
+    // webhook because site-* repos created from a template may not be covered
+    // by the Cloudflare GitHub App installation. This matches deploy-template.ts.
+    const deployResponse = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/pages/projects/${projectName}/deployments`,
+        { method: 'POST', headers: cfHeaders }
+    )
+    if (!deployResponse.ok) {
+        const error = await deployResponse.json().catch(() => ({}))
+        console.warn('[deploy] CF build trigger failed:', error?.errors?.[0]?.message ?? 'unknown')
     }
 
     return siteUrl
 }
 
-// ─── Route Handler ───────────────────────────────────────────────────────────
+// ─── Route Handler (Streaming NDJSON) ────────────────────────────────────────
 
 export async function POST(req: Request) {
     // Auth check
@@ -305,77 +356,178 @@ export async function POST(req: Request) {
         )
     }
 
-    try {
-        // Look up template UUID and version
-        const { data: templateRow, error: templateLookupError } = await supabase
-            .from('templates')
-            .select('id, version')
-            .eq('slug', templateSlug)
-            .single()
+    // Template lookup (pre-stream — errors return JSON, not stream)
+    const { data: templateRow, error: templateLookupError } = await supabase
+        .from('templates')
+        .select('id, version')
+        .eq('slug', templateSlug)
+        .single()
 
-        if (templateLookupError || !templateRow) {
-            return NextResponse.json(
-                { error: `Template not found: ${templateSlug}` },
-                { status: 404 }
-            )
-        }
-
-        // Resolve R2 URLs in manifest before injecting into GitHub
-        const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL
-        const resolvedManifest = R2_PUBLIC_URL
-            ? resolveManifestR2Urls(manifest, R2_PUBLIC_URL)
-            : manifest
-
-        // Step 1: Create repo from template
-        const { repoUrl, created } = await createRepoFromTemplate(templateSlug, siteSlug, GITHUB_ORG)
-
-        // Step 2: Inject the resolved manifest (no git clone — uses GitHub API directly)
-        await injectManifestViaApi(siteSlug, GITHUB_ORG, resolvedManifest)
-
-        // Step 3: Deploy to Cloudflare Pages
-        const siteUrl = await deployToCloudflare(siteSlug, GITHUB_ORG)
-
-        // Step 4: Record deployment in Supabase
-        const { error: dbError } = await supabase
-            .from('deployments')
-            .upsert({
-                project_name: projectName ?? siteSlug,
-                slug: siteSlug,
-                template_id: templateRow.id,
-                template_version: templateRow.version,
-                template_manifest: resolvedManifest,
-                site_data: siteData ?? {},
-                status: 'live' as const,
-                github_repo: `${GITHUB_ORG}/site-${siteSlug}`,
-                github_repo_url: repoUrl,
-                live_url: siteUrl,
-                deployed_by: user.id,
-                deployed_at: new Date().toISOString(),
-                status_log: [{
-                    status: 'live',
-                    step: 'deploy',
-                    message: 'Deployed via admin panel',
-                    at: new Date().toISOString(),
-                }],
-            }, { onConflict: 'slug' })
-
-        if (dbError) {
-            console.error('[deploy] Supabase error:', dbError.message)
-        }
-
-        return NextResponse.json({
-            success: true,
-            siteUrl,
-            repoUrl,
-            siteSlug,
-            repoCreated: created
-        })
-
-    } catch (error: any) {
-        console.error('[deploy] Error:', error.message)
+    if (templateLookupError || !templateRow) {
         return NextResponse.json(
-            { error: error.message || 'Deployment failed' },
+            { error: `Template not found: ${templateSlug}` },
+            { status: 404 }
+        )
+    }
+
+    // Resolve R2 URLs in manifest
+    const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL
+    const resolvedManifest = R2_PUBLIC_URL
+        ? resolveManifestR2Urls(manifest, R2_PUBLIC_URL)
+        : manifest
+
+    // Check for existing site_token (preserve on re-deploy)
+    const { data: existingDeploy } = await supabase
+        .from('deployments')
+        .select('site_token')
+        .eq('slug', siteSlug)
+        .single()
+
+    const siteToken = existingDeploy?.site_token ?? randomUUID()
+
+    // Pre-stream upsert: create/update the deployment record with 'deploying' status
+    const now = new Date().toISOString()
+    const cfProjectName = `site-${siteSlug}`
+
+    const { data: deploymentRow, error: upsertError } = await supabase
+        .from('deployments')
+        .upsert({
+            project_name: projectName ?? siteSlug,
+            slug: siteSlug,
+            template_id: templateRow.id,
+            template_version: templateRow.version,
+            template_manifest: resolvedManifest,
+            site_data: siteData ?? {},
+            status: 'deploying' as const,
+            deployed_by: user.id,
+            deployed_at: now,
+            cloudflare_project_name: cfProjectName,
+            has_unpublished_changes: false,
+            site_token: siteToken,
+            error_message: null,
+            status_log: [{
+                status: 'deploying',
+                step: 'started',
+                message: 'Deployment initiated',
+                at: now,
+            }],
+        }, { onConflict: 'slug' })
+        .select('id')
+        .single()
+
+    if (upsertError || !deploymentRow) {
+        console.error('[deploy] Pre-stream upsert failed:', upsertError?.message)
+        return NextResponse.json(
+            { error: 'Failed to create deployment record' },
             { status: 500 }
         )
     }
+
+    const deploymentId = deploymentRow.id
+
+    // Helper: append to status_log atomically via Postgres RPC
+    async function logStep(status: string, step: string, message: string) {
+        try {
+            await supabase.rpc('append_status_log', {
+                p_deployment_id: deploymentId,
+                p_status: status,
+                p_step: step,
+                p_message: message,
+            })
+        } catch (err: any) {
+            console.warn('[deploy] log step failed:', err?.message)
+        }
+    }
+
+    // ─── Stream deploy steps as NDJSON ───────────────────────────────────────
+    const encoder = new TextEncoder()
+    let currentStep: DeployEvent['step'] = 'create_repo'
+
+    const stream = new ReadableStream({
+        async start(controller) {
+            function emit(event: DeployEvent) {
+                controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'))
+            }
+
+            let repoUrl = ''
+            let siteUrl = ''
+
+            try {
+                // Step 1: Create GitHub repo
+                currentStep = 'create_repo'
+                emit({ step: 'create_repo', status: 'running', message: 'Creating GitHub repository...' })
+                const repoResult = await createRepoFromTemplate(templateSlug!, siteSlug!, GITHUB_ORG!)
+                repoUrl = repoResult.repoUrl
+                await logStep('deploying', 'create_repo', repoResult.created ? 'Repository created' : 'Repository exists')
+                emit({ step: 'create_repo', status: 'done', message: repoResult.created ? 'Repository created' : 'Repository already exists' })
+
+                // Step 2: Inject manifest
+                currentStep = 'inject_manifest'
+                emit({ step: 'inject_manifest', status: 'running', message: 'Injecting site manifest...' })
+                await injectManifestViaApi(siteSlug!, GITHUB_ORG!, resolvedManifest)
+                await logStep('deploying', 'inject_manifest', 'Manifest injected into repository')
+                emit({ step: 'inject_manifest', status: 'done', message: 'Manifest injected' })
+
+                // Step 3: Cloudflare Pages setup + build trigger
+                currentStep = 'cloudflare_setup'
+                emit({ step: 'cloudflare_setup', status: 'running', message: 'Setting up Cloudflare Pages...' })
+                siteUrl = await deployToCloudflare(siteSlug!, GITHUB_ORG!)
+                await logStep('deploying', 'cloudflare_setup', 'Cloudflare Pages configured and build triggered')
+                emit({ step: 'cloudflare_setup', status: 'done', message: 'Cloudflare Pages configured' })
+
+                // Step 4: Save final deployment data
+                currentStep = 'save_record'
+                emit({ step: 'save_record', status: 'running', message: 'Saving deployment record...' })
+
+                const { error: updateError } = await supabase
+                    .from('deployments')
+                    .update({
+                        status: 'building',
+                        github_repo: `${GITHUB_ORG}/site-${siteSlug}`,
+                        github_repo_url: repoUrl,
+                        live_url: siteUrl,
+                    })
+                    .eq('id', deploymentId)
+
+                if (updateError) {
+                    console.error('[deploy] Final update failed:', updateError.message)
+                }
+
+                await logStep('building', 'cloudflare_queued', 'Build queued on Cloudflare Pages')
+                emit({
+                    step: 'save_record',
+                    status: 'done',
+                    message: 'Deployment record saved',
+                    data: { siteUrl, repoUrl, siteSlug },
+                })
+
+            } catch (error: any) {
+                console.error(`[deploy] Error at step ${currentStep}:`, error.message)
+                emit({ step: currentStep, status: 'error', message: error.message || 'Deployment failed' })
+
+                // Record failure in DB (best-effort)
+                try {
+                    await supabase
+                        .from('deployments')
+                        .update({
+                            status: 'failed',
+                            error_message: error.message || 'Deployment failed',
+                        })
+                        .eq('id', deploymentId)
+                } catch { /* best-effort */ }
+
+                await logStep('failed', currentStep, error.message || 'Deployment failed')
+            } finally {
+                controller.close()
+            }
+        },
+    })
+
+    return new Response(stream, {
+        headers: {
+            'Content-Type': 'application/x-ndjson',
+            'Cache-Control': 'no-cache',
+            'X-Content-Type-Options': 'nosniff',
+        },
+    })
 }
