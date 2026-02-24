@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import { useWizardStore } from '@/stores/wizard-store'
 import { usePageList } from '@/hooks/use-page-list'
 import { postToIframe } from '@/lib/utils/iframe'
@@ -17,6 +18,7 @@ export function DetailGroupView({ groupId, iframeRef }: { groupId: string; ifram
   const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
   const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
   const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
+  const setDataUrl = useWizardStore((s) => s.setDataUrl)
   const addPendingImage = useWizardStore((s) => s.addPendingImage)
   const projectName = useWizardStore((s) => s.projectName)
 
@@ -64,6 +66,11 @@ export function DetailGroupView({ groupId, iframeRef }: { groupId: string; ifram
   const groupEntry = fieldGroups.find((g: FieldGroup) => g.id === groupId)
   const groupFields = groupEntry?.fields ?? []
 
+  // Set to true by handleImageUpload just before SchemaFieldRenderer calls onChange.
+  // Tells handleChange to skip the field-update postMessage — blob URLs can't cross origins.
+  // sendFullUpdate (triggered when setDataUrl fires) sends the correct data URL instead.
+  const skipNextIframePost = useRef(false)
+
   function handleChange(key: string, value: any) {
     if (itemIndex < 0) return
     if (useCollection && sourceCollection) {
@@ -72,12 +79,15 @@ export function DetailGroupView({ groupId, iframeRef }: { groupId: string; ifram
     } else if (sourceSection) {
       updateArrayItemField(sourceSection, itemIndex, key, value, itemsPath)
     }
-    if (detailSectionId) {
+    if (detailSectionId && !skipNextIframePost.current) {
       postToIframe(iframeRef, { type: 'field-update', sectionId: detailSectionId, field: key, value })
     }
+    skipNextIframePost.current = false
   }
 
   function handleImageUpload(fieldPath: string, url: string, file?: File) {
+    // Signal handleChange (called right after this) to skip posting the blob URL to the iframe
+    skipNextIframePost.current = true
     const blobKey = useCollection
       ? `${sourceCollection}.${activePage}.${fieldPath}`
       : `${sourceSection}.${itemIndex}.${fieldPath}`
@@ -89,6 +99,11 @@ export function DetailGroupView({ groupId, iframeRef }: { groupId: string; ifram
       const sectionKey = useCollection ? sourceCollection : sourceSection
       const r2Key = `sites/${slug}/${sectionKey}/${itemId}/${fieldPath}.${ext}`
       addPendingImage(blobKey, { blobUrl: url, file, r2Key })
+      // Convert blob URL to data URL. setDataUrl triggers sendFullUpdate which replaces
+      // all blob URLs in the payload with data URLs before sending to the cross-origin iframe.
+      const reader = new FileReader()
+      reader.onload = () => setDataUrl(url, reader.result as string)
+      reader.readAsDataURL(file)
     }
   }
 

@@ -41,7 +41,7 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
   const lastInlineEditTimestamp = useRef(0)
   const iframeLoadFallbackRef = useRef<ReturnType<typeof setTimeout>>()
 
-  const { viewport, sectionData, collectionData, sectionsRegistry, selectedTemplate, updateField, setSelection, clearSelection, setBlobUrl, setDataUrl, dataUrls, activePage } =
+  const { viewport, sectionData, collectionData, sectionsRegistry, selectedTemplate, updateField, updateCollectionItem, updateArrayItemField, setSelection, clearSelection, setBlobUrl, setDataUrl, dataUrls, activePage } =
     useWizardStore()
 
   // Fallback to localhost:4321 when preview URL is empty/invalid
@@ -284,6 +284,34 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
 
   const debouncedSendFullUpdate = useDebouncedCallback(sendFullUpdate, 80)
 
+  // Route a field/value update from a detail: sub-section to the underlying source item.
+  // sendFullUpdate reads from collectionData/sectionData items — NOT from sectionData["detail:core"]
+  // (that's a dead slot). Both handleFileChange and the field-edited handler use this.
+  const routeDetailPageUpdate = useCallback((field: string, value: any) => {
+    const { sectionData: sd, collectionData: cd } = useWizardStore.getState()
+    const manifest = selectedTemplate?.manifest
+    const pageList = buildPageList(manifest, sd, cd)
+    const activeEntry = pageList.find((p: any) => p.id === activePage)
+    const dynDef = manifest?.pages?.find(
+      (p: any) => p.dynamic && (p.id === activeEntry?.dynamicPageId || p.sourceSection === activeEntry?.sourceSection)
+    )
+    if (!dynDef) return
+    const slugField = dynDef.slugField ?? 'slug'
+    if (dynDef.sourceCollection && cd[dynDef.sourceCollection]) {
+      const items = cd[dynDef.sourceCollection]
+      const item = items.find((i: any) => i[slugField] === activePage)
+      if (item?.id) updateCollectionItem(dynDef.sourceCollection, item.id, field, value)
+    } else if (dynDef.sourceSection) {
+      const rawData = sd[dynDef.sourceSection]
+      const itemsPath = dynDef.itemsPath
+      const items = (itemsPath && rawData && !Array.isArray(rawData)
+        ? (rawData as any)[itemsPath]
+        : rawData ?? []) as any[]
+      const idx = Array.isArray(items) ? items.findIndex((i: any) => i[slugField] === activePage) : -1
+      if (idx >= 0) updateArrayItemField(dynDef.sourceSection, idx, field, value, dynDef.itemsPath)
+    }
+  }, [selectedTemplate, activePage, updateCollectionItem, updateArrayItemField])
+
   // Listen for messages from iframe
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
@@ -322,7 +350,13 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
         case 'field-edited':
           if (typeof msg.sectionId !== 'string' || typeof msg.field !== 'string') return
           lastInlineEditTimestamp.current = Date.now()
-          updateField(msg.sectionId, msg.field, msg.value)
+          // detail: sub-sections (e.g. "detail:core") are dead slots in sectionData —
+          // sendFullUpdate reads from collectionData/sectionData items, so route there.
+          if (msg.sectionId.startsWith('detail:')) {
+            routeDetailPageUpdate(msg.field, msg.value)
+          } else {
+            updateField(msg.sectionId, msg.field, msg.value)
+          }
           break
 
         case 'image-replace-requested':
@@ -339,7 +373,7 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
 
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [sendFullUpdate, updateField, setSelection, clearSelection, baseOrigin])
+  }, [sendFullUpdate, updateField, routeDetailPageUpdate, setSelection, clearSelection, baseOrigin])
 
   // Re-send full update whenever data or dataUrls changes and iframe is ready (debounced for keystroke perf)
   // Skip if inline edit happened very recently (prevents feedback loop)
@@ -395,7 +429,13 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
     const blobUrl = URL.createObjectURL(file)
     const key = `${pending.sectionId}.${pending.field}`
     setBlobUrl(key, blobUrl)
-    updateField(pending.sectionId, pending.field, blobUrl)
+
+    // detail: sub-sections are dead slots — route to the underlying source item.
+    if (pending.sectionId.startsWith('detail:')) {
+      routeDetailPageUpdate(pending.field, blobUrl)
+    } else {
+      updateField(pending.sectionId, pending.field, blobUrl)
+    }
 
     // Blob URLs are origin-bound — convert to data URL so the cross-origin iframe can display it.
     // Also store in dataUrls so sendFullUpdate substitutes it on every future full-update.

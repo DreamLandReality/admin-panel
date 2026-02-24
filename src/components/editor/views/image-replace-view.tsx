@@ -1,6 +1,7 @@
 'use client'
 
 import { useWizardStore } from '@/stores/wizard-store'
+import { buildPageList } from '@/lib/utils/page-list'
 import { postToIframe } from '@/lib/utils/iframe'
 import { useImageUpload } from '@/hooks/use-image-upload'
 import { slugify } from '@/lib/utils/slugify'
@@ -9,14 +10,45 @@ import { Breadcrumb, PanelInput } from '../panel-inputs'
 // ─── ImageReplaceView ─────────────────────────────────────────────────────────
 
 export function ImageReplaceView({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const { selection, clearSelection, sectionData, updateField, setBlobUrl, setDataUrl, addPendingImage, projectName } = useWizardStore()
+  const { selection, clearSelection, sectionData, collectionData, selectedTemplate, activePage, updateField, updateCollectionItem, updateArrayItemField, setBlobUrl, setDataUrl, addPendingImage, projectName } = useWizardStore()
   const { sectionId, field, content } = selection
 
   const { fileInputRef, triggerUpload, handleFileChange } = useImageUpload(
     (blobUrl, file) => {
       if (!sectionId || !field) return
       setBlobUrl(`${sectionId}.${field}`, blobUrl)
-      updateField(sectionId, field, blobUrl)
+
+      // For detail: sections, update the underlying collection/section item.
+      // sendFullUpdate reads from there (collectionData/sectionData items), NOT from
+      // sectionData["detail:core"] which is a dead slot — writing there would cause
+      // sendFullUpdate to overwrite the correct image with old data when dataUrls changes.
+      if (sectionId.startsWith('detail:')) {
+        const manifest = selectedTemplate?.manifest
+        const pageList = buildPageList(manifest, sectionData, collectionData)
+        const activeEntry = pageList.find((p) => p.id === activePage)
+        const dynDef = manifest?.pages?.find(
+          (p: any) => p.dynamic && (p.id === activeEntry?.dynamicPageId || p.sourceSection === activeEntry?.sourceSection)
+        )
+        if (dynDef) {
+          const slugField = dynDef.slugField ?? 'slug'
+          if (dynDef.sourceCollection && collectionData[dynDef.sourceCollection]) {
+            const items = collectionData[dynDef.sourceCollection]
+            const item = items.find((i: any) => i[slugField] === activePage)
+            if (item?.id) updateCollectionItem(dynDef.sourceCollection, item.id, field, blobUrl)
+          } else if (dynDef.sourceSection) {
+            const rawData = sectionData[dynDef.sourceSection]
+            const itemsPath = dynDef.itemsPath
+            const items = (itemsPath && rawData && !Array.isArray(rawData)
+              ? (rawData as any)[itemsPath]
+              : rawData ?? []) as any[]
+            const idx = Array.isArray(items) ? items.findIndex((i: any) => i[slugField] === activePage) : -1
+            if (idx >= 0) updateArrayItemField(dynDef.sourceSection, idx, field, blobUrl, dynDef.itemsPath)
+          }
+        }
+      } else {
+        updateField(sectionId, field, blobUrl)
+      }
+
       // Blob URLs are origin-bound and won't load in a cross-origin iframe.
       // Convert to a data URL (base64), store it so sendFullUpdate substitutes it too.
       const reader = new FileReader()
