@@ -64,6 +64,8 @@ interface WizardStore {
   reorderCollectionItems: (collectionId: string, fromIndex: number, toIndex: number) => void
 
   // UI state
+  isViewOnly: boolean
+  setViewOnly: (v: boolean) => void
   panelMode: 'layers' | 'data'
   setPanelMode: (mode: 'layers' | 'data') => void
   selectedCollectionItem: { collectionId: string; itemId: string } | null
@@ -153,6 +155,8 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   viewport: 'desktop',
   activePage: 'home',
   selection: defaultSelection,
+  isViewOnly: false,
+  setViewOnly: (v) => set({ isViewOnly: v }),
   panelMode: 'layers',
   setPanelMode: (mode) => set({ panelMode: mode }),
   selectedCollectionItem: null,
@@ -457,6 +461,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       isDirty: false,
       viewport: 'desktop',
       selection: defaultSelection,
+      isViewOnly: false,
       panelMode: 'layers',
       selectedCollectionItem: null,
     })
@@ -481,6 +486,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       viewport: 'desktop',
       activePage: 'home',
       selection: defaultSelection,
+      isViewOnly: false,
       panelMode: 'layers',
       selectedCollectionItem: null,
     })

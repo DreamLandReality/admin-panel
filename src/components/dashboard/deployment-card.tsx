@@ -18,9 +18,11 @@ import type { SiteData } from '@/types'
 export function DeploymentCard({
   deployment,
   index,
+  href,
 }: {
   deployment: DeploymentCardData
   index: number
+  href?: string
 }) {
   const thumbnailSrc = getThumbnailSrc(deployment)
   const siteData = deployment.site_data as SiteData | null
@@ -32,7 +34,7 @@ export function DeploymentCard({
     deployment.has_unpublished_changes && deployment.status === 'live'
 
   return (
-    <Link href={ROUTES.deployment(deployment.id)} className="group block">
+    <Link href={href ?? ROUTES.deployment(deployment.id)} className="group block">
       <div
         className="opacity-0 animate-fade-in-up"
         style={{

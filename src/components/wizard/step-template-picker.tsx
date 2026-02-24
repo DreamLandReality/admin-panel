@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
 import { EmptyState } from '@/components/dashboard/empty-state'
@@ -109,19 +110,21 @@ export function StepTemplatePicker({ templates }: StepTemplatePickerProps) {
   )
 }
 
-function TemplateCard({
+export function TemplateCard({
   template,
-  isSelected,
+  isSelected = false,
   onSelect,
+  href,
 }: {
   template: Template
-  isSelected: boolean
-  onSelect: (t: Template) => void
+  isSelected?: boolean
+  onSelect?: (t: Template) => void
+  href?: string
 }) {
   const thumbnail = template.preview_image ?? (template.default_data as any)?.seo?.image ?? null
   const sectionCount = template.manifest?.sections?.length ?? 0
 
-  return (
+  const inner = (
     <div
       className={cn(
         'group rounded-xl border bg-card overflow-hidden cursor-pointer transition-all duration-150',
@@ -129,7 +132,7 @@ function TemplateCard({
           ? 'border-foreground ring-2 ring-foreground/20'
           : 'border-border hover:border-foreground/30'
       )}
-      onClick={() => onSelect(template)}
+      onClick={!href ? () => onSelect?.(template) : undefined}
     >
       {/* Thumbnail — 4:5 aspect ratio */}
       <div className="aspect-[4/5] bg-muted relative overflow-hidden">
@@ -171,20 +174,29 @@ function TemplateCard({
         </div>
       </div>
 
-      {/* Select button */}
+      {/* Action button */}
       <div className="px-3 pb-3">
-        <button
-          className={cn(
-            'w-full py-2 rounded-lg text-xs font-medium transition-colors',
-            isSelected
-              ? 'bg-foreground text-background'
-              : 'bg-foreground/5 text-foreground hover:bg-foreground/10'
-          )}
-          onClick={(e) => { e.stopPropagation(); onSelect(template) }}
-        >
-          {isSelected ? 'Selected' : 'Select'}
-        </button>
+        {href ? (
+          <span className="block w-full py-2 rounded-lg text-xs font-medium text-center bg-foreground/5 text-foreground group-hover:bg-foreground/10 transition-colors">
+            Preview
+          </span>
+        ) : (
+          <button
+            className={cn(
+              'w-full py-2 rounded-lg text-xs font-medium transition-colors',
+              isSelected
+                ? 'bg-foreground text-background'
+                : 'bg-foreground/5 text-foreground hover:bg-foreground/10'
+            )}
+            onClick={(e) => { e.stopPropagation(); onSelect?.(template) }}
+          >
+            {isSelected ? 'Selected' : 'Select'}
+          </button>
+        )}
       </div>
     </div>
   )
+
+  if (href) return <Link href={href} className="block">{inner}</Link>
+  return inner
 }

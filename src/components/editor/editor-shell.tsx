@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
@@ -30,10 +31,12 @@ const VIEWPORT_OPTIONS = [
 
 export function EditorShell() {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const router = useRouter()
   const {
     selectedTemplate, isDirty, viewport, setViewport, setStep, panelMode,
     projectName, draftId, setDraftId, pendingImages,
     sectionData, sectionsRegistry, collectionData, activePage, rawText,
+    isViewOnly,
   } = useWizardStore()
 
   const [saving, setSaving] = useState(false)
@@ -63,12 +66,16 @@ export function EditorShell() {
   }, [isDirty])
 
   const handleBack = useCallback(() => {
+    if (isViewOnly) {
+      router.push('/templates')
+      return
+    }
     if (isDirty) {
       setShowBackModal(true)
     } else {
       setStep(2)
     }
-  }, [isDirty, setStep])
+  }, [isViewOnly, isDirty, setStep, router])
 
   function handleDiscard() {
     setShowBackModal(false)
@@ -173,9 +180,9 @@ export function EditorShell() {
         {/* Center — Project name + badge */}
         <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
           <span className="font-serif text-base font-light tracking-wide text-foreground truncate max-w-[260px]">
-            {projectName || 'New Deployment'}
+            {isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}
           </span>
-          {draftId && !isDirty && (
+          {!isViewOnly && draftId && !isDirty && (
             <span className="text-label uppercase tracking-label text-emerald-400/80 border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 rounded flex-shrink-0">
               Saved
             </span>
@@ -205,34 +212,38 @@ export function EditorShell() {
             ))}
           </div>
 
-          <div className="w-px h-4 bg-white/10" />
+          {!isViewOnly && (
+            <>
+              <div className="w-px h-4 bg-white/10" />
 
-          <button
-            onClick={handleSaveDraft}
-            disabled={saving || !isDirty}
-            className={cn(
-              'flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-30 disabled:pointer-events-none',
-              isDirty
-                ? 'border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/15'
-                : 'border border-white/10 text-foreground hover:bg-white/5'
-            )}
-          >
-            {saving ? (
-              <>
-                <span className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-300 rounded-full animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Draft'
-            )}
-          </button>
-          <button
-            onClick={() => setShowDeployModal(true)}
-            disabled={!isDirty}
-            className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-30 disabled:pointer-events-none"
-          >
-            Deploy
-          </button>
+              <button
+                onClick={handleSaveDraft}
+                disabled={saving || !isDirty}
+                className={cn(
+                  'flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-30 disabled:pointer-events-none',
+                  isDirty
+                    ? 'border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/15'
+                    : 'border border-white/10 text-foreground hover:bg-white/5'
+                )}
+              >
+                {saving ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-300 rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Draft'
+                )}
+              </button>
+              <button
+                onClick={() => setShowDeployModal(true)}
+                disabled={!isDirty}
+                className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              >
+                Deploy
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -246,10 +257,12 @@ export function EditorShell() {
             {/* Canvas */}
             <PreviewCanvas templatePreviewUrl={previewUrl} iframeRef={iframeRef} />
 
-            {/* Right panel */}
-            <div className="w-[280px] border-l border-white/10 flex-shrink-0 bg-editor-surface overflow-hidden flex flex-col">
-              <RightPanel iframeRef={iframeRef} />
-            </div>
+            {/* Right panel — hidden in view-only mode */}
+            {!isViewOnly && (
+              <div className="w-[280px] border-l border-white/10 flex-shrink-0 bg-editor-surface overflow-hidden flex flex-col">
+                <RightPanel iframeRef={iframeRef} />
+              </div>
+            )}
           </>
         ) : (
           /* Full-width collection editor (data mode) */
