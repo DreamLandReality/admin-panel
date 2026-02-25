@@ -1,36 +1,45 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+'use client'
+
+import { useEffect, useState } from 'react'
 import { TemplateCard } from '@/components/wizard/step-template-picker'
-import { ROUTES } from '@/lib/constants'
+import { EditorShell } from '@/components/editor/editor-shell'
+import { useWizardStore } from '@/stores/wizard-store'
 import type { Template } from '@/types'
 
-export const dynamic = 'force-dynamic'
+export default function TemplatesPage() {
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [loading, setLoading] = useState(true)
+  const { isViewOnly, selectedTemplate, reset, selectTemplate, loadManualDefaults, setViewOnly } = useWizardStore()
 
-export default async function TemplatesPage() {
-  const supabase = createClient()
+  useEffect(() => {
+    fetch('/api/templates')
+      .then((r) => r.json())
+      .then((data) => setTemplates(data.data ?? []))
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    redirect('/login')
+  function handleView(template: Template) {
+    reset()
+    selectTemplate(template)
+    loadManualDefaults(template)
+    setViewOnly(true)
   }
 
-  const { data: templates, error: queryError } = await supabase
-    .from('templates')
-    .select('*')
-    .eq('is_active', true)
-    .order('created_at', { ascending: true })
-
-  if (queryError) {
-    console.error('Failed to fetch templates:', queryError)
+  // Show editor as full-screen overlay — no navigation needed
+  if (isViewOnly && selectedTemplate) {
+    return <EditorShell />
   }
 
-  const typedTemplates = (templates ?? []) as Template[]
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <span className="w-5 h-5 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
+      </div>
+    )
+  }
 
-  if (typedTemplates.length === 0) {
+  if (templates.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-in">
         <p className="font-serif text-2xl text-foreground mb-2">No templates available</p>
@@ -40,20 +49,18 @@ export default async function TemplatesPage() {
   }
 
   return (
-    <div className="max-w-5xl">
-      <div className={
-        typedTemplates.length === 1
-          ? 'grid gap-5 max-w-xs'
-          : 'grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
-      }>
-        {typedTemplates.map((template) => (
-          <TemplateCard
-            key={template.id}
-            template={template}
-            href={ROUTES.template(template.slug)}
-          />
-        ))}
-      </div>
+    <div className={
+      templates.length === 1
+        ? 'grid gap-5 max-w-xs'
+        : 'grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4'
+    }>
+      {templates.map((template) => (
+        <TemplateCard
+          key={template.id}
+          template={template}
+          onSelect={handleView}
+        />
+      ))}
     </div>
   )
 }

@@ -216,6 +216,7 @@ export interface FormSubmission {
 export interface Draft {
   id: string
   user_id: string
+  deployment_id: string | null
   template_id: string | null
   template_slug: string
   current_step: number
@@ -237,6 +238,9 @@ export interface DraftCardData {
   template_id: string | null
   current_step: number
   updated_at: string
+  deployment_id: string | null
+  // Joined from deployments when deployment_id is set
+  deployments?: { project_name: string; screenshot_url: string | null; status: DeploymentStatus } | null
 }
 
 export interface PendingImage {
@@ -281,6 +285,7 @@ export interface DeploymentCardData {
   template_id: string
   has_unpublished_changes: boolean
   site_data: SiteData | null
+  live_url: string | null
   updated_at: string
 }
 

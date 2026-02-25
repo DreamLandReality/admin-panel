@@ -34,14 +34,16 @@ export function EditorShell() {
   const router = useRouter()
   const {
     selectedTemplate, isDirty, viewport, setViewport, setStep, panelMode,
-    projectName, draftId, setDraftId, pendingImages,
+    projectName, draftId, setDraftId, deploymentId, pendingImages,
     sectionData, sectionsRegistry, collectionData, activePage, rawText,
     isViewOnly,
   } = useWizardStore()
 
+  const isEditMode = deploymentId !== null
+
   const [saving, setSaving] = useState(false)
   const [showBackModal, setShowBackModal] = useState(false)
-  const [showDeployModal, setShowDeployModal] = useState(false)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   // Revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -65,68 +67,78 @@ export function EditorShell() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
+  // ── Back navigation ────────────────────────────────────────────────────────
+
   const handleBack = useCallback(() => {
     if (isViewOnly) {
-      router.push('/templates')
+      useWizardStore.getState().reset()
       return
     }
     if (isDirty) {
       setShowBackModal(true)
+    } else if (isEditMode) {
+      // Edit mode: reset store and go back to dashboard
+      useWizardStore.getState().reset()
+      router.push('/')
     } else {
       setStep(2)
     }
-  }, [isViewOnly, isDirty, setStep, router])
+  }, [isViewOnly, isDirty, isEditMode, setStep, router])
 
   function handleDiscard() {
     setShowBackModal(false)
+    const { blobUrls, pendingImages: pending } = useWizardStore.getState()
+    Object.values(blobUrls).forEach((url) => {
+      if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
+    })
+    Object.values(pending).forEach(({ blobUrl }) => URL.revokeObjectURL(blobUrl))
 
-    if (!draftId) {
-      // Scenario 1: No saved draft — wipe everything and go back to template picker
+    if (isEditMode) {
+      // Edit mode: drop local edits, go back to dashboard
       useWizardStore.getState().reset()
-    } else {
-      // Scenario 2: Has a saved draft — discard pending blobs, clear dirty flag, exit editor
-      const { blobUrls, pendingImages: pending } = useWizardStore.getState()
-      Object.values(blobUrls).forEach((url) => {
-        if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
-      })
-      Object.values(pending).forEach(({ blobUrl }) => URL.revokeObjectURL(blobUrl))
+      router.push('/')
+    } else if (draftId) {
+      // New-site draft saved: discard pending blobs, clear dirty, back to step 2
       useWizardStore.setState({ isDirty: false, pendingImages: {}, blobUrls: {} })
       setStep(2)
+    } else {
+      // No draft: wipe everything
+      useWizardStore.getState().reset()
     }
   }
+
+  // ── Shared upload helper ───────────────────────────────────────────────────
+
+  async function uploadAndResolve() {
+    const urlMap = await uploadPendingImages(pendingImages)
+    const finalSectionData = replaceBlobUrls(sectionData, urlMap)
+    const finalCollectionData = replaceBlobUrls(collectionData, urlMap)
+    if (urlMap.size > 0) {
+      useWizardStore.setState({
+        sectionData: finalSectionData,
+        collectionData: finalCollectionData,
+        pendingImages: {},
+        blobUrls: {},
+      })
+    }
+    return { finalSectionData, finalCollectionData }
+  }
+
+  // ── Save Draft (both modes) ────────────────────────────────────────────────
+  // New-site:  upserts by (user_id, project_name)     — no deployment_id
+  // Edit-site: SELECT-first logic in the API          — deployment_id included
 
   async function handleSaveDraft() {
     if (saving) return
     setSaving(true)
-
     try {
-      // Upload pending images to R2
-      const urlMap = await uploadPendingImages(pendingImages)
+      const { finalSectionData, finalCollectionData } = await uploadAndResolve()
 
-      // Replace blob URLs in data
-      const finalSectionData = replaceBlobUrls(sectionData, urlMap)
-      const finalCollectionData = replaceBlobUrls(collectionData, urlMap)
-
-      // Update store with resolved URLs
-      if (urlMap.size > 0) {
-        const store = useWizardStore.getState()
-        // Update section & collection data with resolved URLs
-        useWizardStore.setState({
-          sectionData: finalSectionData,
-          collectionData: finalCollectionData,
-          pendingImages: {},
-          blobUrls: {},
-        })
-        // Clean up — store reference is still valid
-        void store
-      }
-
-      // Upsert draft
       const res = await fetch('/api/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          project_name: projectName,
+          project_name: isEditMode ? null : projectName,
           template_slug: selectedTemplate?.slug ?? '',
           template_id: selectedTemplate?.id ?? null,
           current_step: 3,
@@ -135,6 +147,7 @@ export function EditorShell() {
           sections_registry: sectionsRegistry,
           collection_data: finalCollectionData,
           last_active_page: activePage,
+          ...(isEditMode ? { deployment_id: deploymentId } : {}),
         }),
       })
 
@@ -150,15 +163,51 @@ export function EditorShell() {
     }
   }
 
-  // preview_url is set after deployment; fall back to config.previewUrl (stored in template config)
-  // so the editor works for templates that haven't been deployed yet or whose preview_url is stale.
+  // ── Save Changes (edit mode only) ──────────────────────────────────────────
+  // Persists the current editor state back to the deployment's site_data
+  // and sets has_unpublished_changes = true. Does NOT trigger a redeploy.
+
+  async function handleSaveChanges() {
+    if (saving || !deploymentId) return
+    setSaving(true)
+    try {
+      const { finalSectionData, finalCollectionData } = await uploadAndResolve()
+
+      const site_data = {
+        _sections: sectionsRegistry,
+        ...finalSectionData,
+        // collectionData is not stored in site_data (managed in template manifest)
+        // but include it if the template uses it
+        ...(Object.keys(finalCollectionData).length > 0
+          ? { _collections: finalCollectionData }
+          : {}),
+      }
+
+      const res = await fetch(`/api/deployments/${deploymentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_data, action: 'save' }),
+      })
+
+      if (res.ok) {
+        useWizardStore.setState({ isDirty: false })
+      }
+    } catch (err) {
+      console.error('[SaveChanges] Failed:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // preview_url is set after deployment; fall back to config.previewUrl so the editor
+  // works for templates that haven't been deployed yet or whose preview_url is stale.
   const previewUrl = selectedTemplate?.preview_url ?? selectedTemplate?.config?.previewUrl ?? ''
 
   return (
     <div className="dark fixed inset-0 bg-background flex flex-col z-50">
       {/* ── Top Toolbar ── */}
       <div className="h-14 border-b border-white/10 flex items-center px-4 flex-shrink-0 gap-4">
-        {/* Left — Back + template name */}
+        {/* Left — Back + context label */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <button
             onClick={handleBack}
@@ -173,23 +222,23 @@ export function EditorShell() {
           <div className="w-px h-4 bg-white/10" />
 
           <span className="text-xs text-muted-foreground truncate max-w-[140px]">
-            {selectedTemplate?.name ?? ''}
+            {isEditMode ? 'Editing Live Site' : (selectedTemplate?.name ?? '')}
           </span>
         </div>
 
-        {/* Center — Project name + badge */}
+        {/* Center — Project name + saved badge */}
         <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
           <span className="font-serif text-base font-light tracking-wide text-foreground truncate max-w-[260px]">
             {isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}
           </span>
-          {!isViewOnly && draftId && !isDirty && (
+          {!isViewOnly && (draftId || isEditMode) && !isDirty && (
             <span className="text-label uppercase tracking-label text-emerald-400/80 border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 rounded flex-shrink-0">
               Saved
             </span>
           )}
         </div>
 
-        {/* Right — Viewport switcher + actions */}
+        {/* Right — Viewport switcher + action buttons */}
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* Viewport switcher */}
           <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
@@ -216,6 +265,7 @@ export function EditorShell() {
             <>
               <div className="w-px h-4 bg-white/10" />
 
+              {/* Save Draft — works in both new-site and edit-site mode */}
               <button
                 onClick={handleSaveDraft}
                 disabled={saving || !isDirty}
@@ -235,13 +285,25 @@ export function EditorShell() {
                   'Save Draft'
                 )}
               </button>
-              <button
-                onClick={() => setShowDeployModal(true)}
-                disabled={!isDirty}
-                className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-30 disabled:pointer-events-none"
-              >
-                Deploy
-              </button>
+
+              {isEditMode ? (
+                /* Edit mode: Save Changes persists to the deployment record */
+                <button
+                  onClick={handleSaveChanges}
+                  disabled={saving}
+                  className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  Save Changes
+                </button>
+              ) : (
+                /* New-site mode: Deploy (coming soon) */
+                <button
+                  onClick={() => setShowComingSoon(true)}
+                  className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors"
+                >
+                  Deploy
+                </button>
+              )}
             </>
           )}
         </div>
@@ -249,15 +311,11 @@ export function EditorShell() {
 
       {/* ── Main area ── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left panel — pages / collections navigation */}
         <LeftPanel />
 
         {panelMode === 'layers' ? (
           <>
-            {/* Canvas */}
             <PreviewCanvas templatePreviewUrl={previewUrl} iframeRef={iframeRef} />
-
-            {/* Right panel — hidden in view-only mode */}
             {!isViewOnly && (
               <div className="w-[280px] border-l border-white/10 flex-shrink-0 bg-editor-surface overflow-hidden flex flex-col">
                 <RightPanel iframeRef={iframeRef} />
@@ -265,7 +323,6 @@ export function EditorShell() {
             )}
           </>
         ) : (
-          /* Full-width collection editor (data mode) */
           <div className="flex-1 border-l border-white/10 bg-editor-surface overflow-y-auto">
             <CollectionEditorPanel />
           </div>
@@ -275,33 +332,47 @@ export function EditorShell() {
       {/* Back confirmation modal */}
       <ConfirmModal
         open={showBackModal}
-        title={draftId ? 'Discard changes?' : 'Discard & leave?'}
+        title={isEditMode ? 'Leave editor?' : (draftId ? 'Discard changes?' : 'Discard & leave?')}
         description={
-          draftId
+          isEditMode
+            ? 'Any unsaved changes will be lost. Your last saved version will be preserved.'
+            : draftId
             ? 'Your unsaved changes will be discarded and the last saved version will be restored.'
             : 'All your work — including the project name and content — will be lost. This cannot be undone.'
         }
-        confirmLabel={draftId ? 'Discard Changes' : 'Discard & Leave'}
+        confirmLabel={isEditMode ? 'Leave' : (draftId ? 'Discard Changes' : 'Discard & Leave')}
         cancelLabel="Stay"
         variant="danger"
         onConfirm={handleDiscard}
         onCancel={() => setShowBackModal(false)}
       />
 
-      {/* Deploy confirmation modal */}
-      <ConfirmModal
-        open={showDeployModal}
-        title="Ready to deploy?"
-        description="This will save your draft and take you to the deployment step where you can choose a site slug and go live."
-        confirmLabel="Continue to Deploy"
-        cancelLabel="Not yet"
-        variant="default"
-        onConfirm={() => {
-          setShowDeployModal(false)
-          setStep(4)
-        }}
-        onCancel={() => setShowDeployModal(false)}
-      />
+      {/* Deploy — coming soon overlay (new-site mode only) */}
+      {showComingSoon && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-editor-surface border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center space-y-5">
+            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-serif text-lg text-foreground mb-1.5">Deployment Coming Soon</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                The deployment feature is currently under development. Your draft is saved and will be ready to publish when this feature launches.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowComingSoon(false)}
+              className="w-full px-4 py-2.5 rounded-lg text-sm font-medium border border-white/10 text-foreground hover:bg-white/5 transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

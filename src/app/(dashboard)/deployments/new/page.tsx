@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation'
 import { WizardShell } from '@/components/wizard/wizard-shell'
 import { StepTemplatePicker } from '@/components/wizard/step-template-picker'
 import { StepDataInput } from '@/components/wizard/step-data-input'
-import { StepDeploy } from '@/components/wizard/step-deploy'
 import { EditorShell } from '@/components/editor/editor-shell'
 import { SyncHeaderContent } from '@/components/shared/sync-header-content'
 import { useWizardStore } from '@/stores/wizard-store'
@@ -96,7 +95,7 @@ export default function NewDeploymentPage() {
       <SyncHeaderContent>
         <div className="text-center min-w-[52px]">
           <p className="font-serif text-3xl font-light tabular-nums leading-none text-foreground">
-            {currentStep}<span className="text-foreground-muted">/4</span>
+            {currentStep}<span className="text-foreground-muted">/3</span>
           </p>
           <p className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
             Step
@@ -109,7 +108,6 @@ export default function NewDeploymentPage() {
           <StepTemplatePicker templates={templates} />
         )}
         {currentStep === 2 && <StepDataInput />}
-        {currentStep === 4 && <StepDeploy />}
       </WizardShell>
     </>
   )

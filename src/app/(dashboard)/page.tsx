@@ -22,20 +22,33 @@ export default async function DashboardHomePage() {
     redirect('/login')
   }
 
-  const { data: deployments, error: queryError } = await supabase
-    .from('deployments')
-    .select(
-      'id, project_name, slug, status, screenshot_url, template_id, has_unpublished_changes, site_data, updated_at'
-    )
-    .eq('deployed_by', user.id)
-    .order('updated_at', { ascending: false })
+  const [deploymentsResult, editDraftsResult] = await Promise.all([
+    supabase
+      .from('deployments')
+      .select(
+        'id, project_name, slug, status, screenshot_url, template_id, has_unpublished_changes, site_data, live_url, updated_at'
+      )
+      .eq('deployed_by', user.id)
+      .order('updated_at', { ascending: false }),
+    // Fetch which deployments have an in-progress edit draft
+    supabase
+      .from('drafts')
+      .select('deployment_id')
+      .eq('user_id', user.id)
+      .not('deployment_id', 'is', null),
+  ])
 
-  if (queryError) {
-    console.error('Failed to fetch deployments:', queryError)
+  if (deploymentsResult.error) {
+    console.error('Failed to fetch deployments:', deploymentsResult.error)
   }
 
-  const typedDeployments = (deployments ?? []) as DeploymentCardData[]
+  const typedDeployments = (deploymentsResult.data ?? []) as DeploymentCardData[]
   const stats = computeStats(typedDeployments)
+
+  // Build a set of deployment IDs that have an active edit draft
+  const editDraftIds = new Set(
+    (editDraftsResult.data ?? []).map((d) => d.deployment_id as string)
+  )
 
   return (
     <>
@@ -43,12 +56,13 @@ export default async function DashboardHomePage() {
       <SyncHeaderStats stats={stats} />
 
       {typedDeployments.length > 0 ? (
-        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
           {typedDeployments.map((deployment, idx) => (
             <DeploymentCard
               key={deployment.id}
               deployment={deployment}
               index={idx}
+              hasEditDraft={editDraftIds.has(deployment.id)}
             />
           ))}
           <AddNewCard index={typedDeployments.length} />

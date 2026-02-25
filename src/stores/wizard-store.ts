@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Template, ViewMode, Draft, PendingImage } from '@/types'
+import type { Template, ViewMode, Draft, PendingImage, Deployment } from '@/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +25,10 @@ interface WizardStore {
   // Draft tracking
   draftId: string | null
   setDraftId: (id: string | null) => void
+
+  // Deployment edit tracking
+  deploymentId: string | null
+  setDeploymentId: (id: string | null) => void
 
   // Step 2 — Data input
   rawText: string
@@ -79,6 +83,7 @@ interface WizardStore {
   loadParseResult: (data: Record<string, any>, sections: Record<string, { enabled: boolean }>) => void
   loadManualDefaults: (template: Template) => void
   loadFromDraft: (draft: Draft, template: Template) => void
+  loadFromDeployment: (deployment: Deployment, template: Template) => void
   reset: () => void
 }
 
@@ -139,6 +144,10 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   // Draft tracking
   draftId: null,
   setDraftId: (id) => set({ draftId: id }),
+
+  // Deployment edit tracking
+  deploymentId: null,
+  setDeploymentId: (id) => set({ deploymentId: id }),
 
   // Step 2
   rawText: '',
@@ -440,13 +449,59 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     })
   },
 
-  // Load from a saved draft and resume editing
+  // Load from a deployed site and open for re-editing.
+  // Uses deployment.template_manifest (frozen snapshot at creation time) instead of
+  // the live templates.manifest — the template may have changed since the site was deployed.
+  loadFromDeployment: (deployment, template) => {
+    revokeAllBlobs(get().blobUrls, get().pendingImages)
+
+    // Separate _sections from the rest of site_data to get sectionData + sectionsRegistry
+    const { _sections, ...sectionData } = (deployment.site_data ?? {}) as Record<string, any>
+    const sectionsRegistry = (_sections ?? {}) as Record<string, { enabled: boolean }>
+
+    // Use the frozen manifest snapshot stored on the deployment row
+    const frozenManifest = deployment.template_manifest ?? template.manifest
+
+    // Rebuild collectionData from the frozen manifest (not the live template)
+    const collectionData: Record<string, any[]> = {}
+    for (const col of frozenManifest?.collections ?? []) {
+      collectionData[col.id] = col.data ?? []
+    }
+
+    set({
+      deploymentId: deployment.id,
+      draftId: null,
+      projectName: deployment.project_name,
+      // Override manifest with the frozen snapshot so the editor reflects the deployed structure
+      selectedTemplate: { ...template, manifest: frozenManifest },
+      currentStep: 3,
+      rawText: '',
+      sectionData,
+      sectionsRegistry,
+      collectionData,
+      activePage: 'home',
+      blobUrls: {},
+      dataUrls: {},
+      pendingImages: {},
+      isDirty: false,
+      viewport: 'desktop',
+      selection: defaultSelection,
+      isViewOnly: false,
+      panelMode: 'layers',
+      selectedCollectionItem: null,
+    })
+  },
+
+  // Load from a saved draft and resume editing.
+  // For edit-site drafts (draft.deployment_id set), restores deploymentId in the store
+  // so the editor opens in edit mode with the correct save targets.
   loadFromDraft: (draft, template) => {
     // Revoke existing blob URLs
     revokeAllBlobs(get().blobUrls, get().pendingImages)
 
     set({
       draftId: draft.id,
+      deploymentId: draft.deployment_id ?? null,
       projectName: draft.project_name ?? '',
       selectedTemplate: template,
       currentStep: (draft.current_step as 1 | 2 | 3 | 4) ?? 3,
@@ -475,6 +530,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       selectedTemplate: null,
       projectName: '',
       draftId: null,
+      deploymentId: null,
       rawText: '',
       sectionData: {},
       sectionsRegistry: {},

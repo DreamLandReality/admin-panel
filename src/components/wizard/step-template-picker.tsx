@@ -6,16 +6,7 @@ import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { R2Image } from '@/components/r2-image'
-import type { Template, TemplateCategory } from '@/types'
-
-const ALL_CATEGORIES: Array<{ value: 'all' | TemplateCategory; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'luxury', label: 'Luxury' },
-  { value: 'modern', label: 'Modern' },
-  { value: 'investment', label: 'Investment' },
-  { value: 'villa', label: 'Villa' },
-  { value: 'affordable', label: 'Affordable' },
-]
+import type { Template } from '@/types'
 
 interface StepTemplatePickerProps {
   templates: Template[]
@@ -25,15 +16,7 @@ export function StepTemplatePicker({ templates }: StepTemplatePickerProps) {
   const selectTemplate = useWizardStore((s) => s.selectTemplate)
   const setStep = useWizardStore((s) => s.setStep)
 
-  const [activeCategory, setActiveCategory] = useState<'all' | TemplateCategory>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-
-  const filtered =
-    activeCategory === 'all'
-      ? templates
-      : templates.filter((t) => t.category === activeCategory)
-
-  const showFilters = templates.length > 1
 
   function handleSelect(template: Template) {
     setSelectedId(template.id)
@@ -53,49 +36,25 @@ export function StepTemplatePicker({ templates }: StepTemplatePickerProps) {
             Pick the design that best fits your property.
           </p>
         </div>
-
-        {/* Category filters */}
-        {showFilters && (
-          <div className="flex items-center gap-2 mb-10 overflow-x-auto pb-1">
-            {ALL_CATEGORIES.map((cat) => (
-              <button
-                key={cat.value}
-                onClick={() => setActiveCategory(cat.value)}
-                className={cn(
-                  'px-4 py-1.5 rounded-full text-[11px] font-medium uppercase tracking-widest whitespace-nowrap transition-all duration-200',
-                  activeCategory === cat.value
-                    ? 'bg-foreground text-background'
-                    : 'text-foreground-muted hover:text-foreground hover:bg-foreground/5'
-                )}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Template grid */}
-      {filtered.length === 0 ? (
+      {templates.length === 0 ? (
         <div className="flex-1 flex items-center justify-center w-full pb-20">
           <EmptyState
             heading="No templates available"
-            description={
-              activeCategory === 'all'
-                ? 'Templates will appear here once they are added to the system.'
-                : 'No templates in this category yet. Try selecting a different category.'
-            }
+            description="Templates will appear here once they are added to the system."
             ctaLabel=""
             ctaHref=""
           />
         </div>
       ) : (
-        <div className="max-w-5xl">
+        <div>
           <div className={cn(
             'grid gap-5',
-            filtered.length === 1 ? 'max-w-xs' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+            templates.length === 1 ? 'max-w-xs' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
           )}>
-            {filtered.map((template) => (
+            {templates.map((template) => (
               <TemplateCard
                 key={template.id}
                 template={template}
@@ -127,10 +86,8 @@ export function TemplateCard({
   const inner = (
     <div
       className={cn(
-        'group rounded-xl border bg-card overflow-hidden cursor-pointer transition-all duration-150',
-        isSelected
-          ? 'border-foreground ring-2 ring-foreground/20'
-          : 'border-border hover:border-foreground/30'
+        'group rounded-xl bg-card overflow-hidden cursor-pointer transition-all duration-150',
+        isSelected && 'ring-2 ring-foreground/20'
       )}
       onClick={!href ? () => onSelect?.(template) : undefined}
     >
@@ -174,26 +131,6 @@ export function TemplateCard({
         </div>
       </div>
 
-      {/* Action button */}
-      <div className="px-3 pb-3">
-        {href ? (
-          <span className="block w-full py-2 rounded-lg text-xs font-medium text-center bg-foreground/5 text-foreground group-hover:bg-foreground/10 transition-colors">
-            Preview
-          </span>
-        ) : (
-          <button
-            className={cn(
-              'w-full py-2 rounded-lg text-xs font-medium transition-colors',
-              isSelected
-                ? 'bg-foreground text-background'
-                : 'bg-foreground/5 text-foreground hover:bg-foreground/10'
-            )}
-            onClick={(e) => { e.stopPropagation(); onSelect?.(template) }}
-          >
-            {isSelected ? 'Selected' : 'Select'}
-          </button>
-        )}
-      </div>
     </div>
   )
 
