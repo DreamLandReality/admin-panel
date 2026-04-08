@@ -1,16 +1,31 @@
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV === 'development'
+
 const nextConfig = {
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '*.r2.dev' },
+      { protocol: 'https', hostname: '*.r2.cloudflarestorage.com' },
+      { protocol: 'https', hostname: '*.supabase.co' },
+      { protocol: 'https', hostname: '*.pages.dev' },
+    ],
+  },
+  async redirects() {
+    return [
+      { source: '/drafts', destination: '/', permanent: true },
+    ]
+  },
   async headers() {
-    // CSP in report-only mode: logs violations without blocking.
-    // Once verified in production, change the key to 'Content-Security-Policy'.
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' blob: data: https://*.supabase.co https://*.r2.cloudflarestorage.com https://*.pages.dev",
-      "font-src 'self' data:",
-      "frame-src https://*.pages.dev http://localhost:* http://127.0.0.1:*",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com",
+      isDev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:" : "script-src 'self' 'unsafe-inline' blob: data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' blob: data: https://*.supabase.co https://*.r2.cloudflarestorage.com https://*.r2.dev https://*.pages.dev",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      isDev
+        ? "frame-src https://*.pages.dev http://localhost:* http://127.0.0.1:*"
+        : "frame-src https://*.pages.dev",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://api.elevenlabs.io wss://api.elevenlabs.io",
     ].join('; ')
 
     return [
@@ -23,10 +38,10 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            value: 'camera=(), microphone=(self), geolocation=()',
           },
           {
-            key: 'Content-Security-Policy-Report-Only',
+            key: 'Content-Security-Policy',
             value: csp,
           },
         ],

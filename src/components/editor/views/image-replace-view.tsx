@@ -10,7 +10,20 @@ import { Breadcrumb, PanelInput } from '../panel-inputs'
 // ─── ImageReplaceView ─────────────────────────────────────────────────────────
 
 export function ImageReplaceView({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const { selection, clearSelection, sectionData, collectionData, selectedTemplate, activePage, updateField, updateCollectionItem, updateArrayItemField, setBlobUrl, setDataUrl, addPendingImage, projectName } = useWizardStore()
+  // ── Zustand selectors ──
+  const selection = useWizardStore((s) => s.selection)
+  const sectionData = useWizardStore((s) => s.sectionData)
+  const collectionData = useWizardStore((s) => s.collectionData)
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const activePage = useWizardStore((s) => s.activePage)
+  const projectName = useWizardStore((s) => s.projectName)
+  const clearSelection = useWizardStore((s) => s.clearSelection)
+  const updateField = useWizardStore((s) => s.updateField)
+  const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
+  const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
+  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
+  const setDataUrl = useWizardStore((s) => s.setDataUrl)
+  const addPendingImage = useWizardStore((s) => s.addPendingImage)
   const { sectionId, field, content } = selection
 
   const { fileInputRef, triggerUpload, handleFileChange } = useImageUpload(

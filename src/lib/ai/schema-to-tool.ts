@@ -1,7 +1,5 @@
 import type { ManifestSection } from '@/types'
-
-// Sections skipped from AI extraction — handled separately
-const SKIP_SECTIONS = new Set(['seo', 'navigation', 'footer'])
+import { findAiSkipSections } from '@/lib/constants'
 
 // Remove fields marked aiIgnore: true from a properties map
 function filterAiIgnore(props: Record<string, any>): Record<string, any> {
@@ -13,11 +11,12 @@ function filterAiIgnore(props: Record<string, any>): Record<string, any> {
 }
 
 export function buildToolSchema(sections: ManifestSection[]) {
+  const skipSections = findAiSkipSections(sections as any[])
   const properties: Record<string, any> = {}
   const required: string[] = []
 
   for (const section of sections) {
-    if (SKIP_SECTIONS.has(section.id)) continue
+    if (skipSections.has(section.id)) continue
 
     const schema = section.schema as any
     const isArray = section.dataType === 'array' || (schema?.type === 'array' && schema.items)

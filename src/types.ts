@@ -57,11 +57,20 @@ export interface ManifestPage {
   fieldGroups?: FieldGroup[]    // how to organize fields in editor sidebar for individual dynamic items
 }
 
+// Responsive style value — stored when a StyleControl has responsive: true
+// Only valid for fontSize sliders. All other properties use a flat string.
+export type ResponsiveStyleValue = {
+  desktop?: string
+  tablet?: string
+  mobile?: string
+}
+
 export interface StyleControl {
   type: 'buttonGroup' | 'slider' | 'colorGrid'
   property: string
   label: string
   default?: string
+  responsive?: boolean             // Only valid on fontSize sliders. Enables Desktop/Tablet/Mobile tabs in the admin panel.
   options?: { value: string; label: string; icon?: string }[]
   presets?: { value: string; label: string }[]
   min?: number
@@ -84,11 +93,27 @@ export interface ManifestSection {
   dataType?: 'object' | 'array'
   data?: any
   required: boolean
+  /** When true, section cannot be toggled off by editor users. */
+  locked?: boolean
   page?: string
   imageSlots?: string[]
   listingFields?: string[]      // subset of fields for compact card view (array sections only)
   schema: SectionSchema
   styleControls?: SectionStyleControls
+}
+
+export interface FieldConstraints {
+  maxLength?: number
+  minLength?: number
+  pattern?: string
+  min?: number
+  max?: number
+  /** For array/repeater fields: whether new items can be added. Default true. */
+  canAdd?: boolean
+  /** For array/repeater fields: whether items can be removed. Default true. */
+  canRemove?: boolean
+  maxItems?: number
+  minItems?: number
 }
 
 export interface FieldSchema {
@@ -102,11 +127,18 @@ export interface FieldSchema {
   enum?: string[]
   minLength?: number
   maxLength?: number
+  min?: number
+  max?: number
+  step?: number
   aiIgnore?: boolean
   aiHint?: string
   example?: any
   /** For collectionPicker widget: ID of the referenced collection */
   collectionId?: string
+  /** Whether this field can be edited by admin users. Defaults to true if omitted. */
+  editable?: boolean
+  /** Value and array constraints enforced by the editor. */
+  constraints?: FieldConstraints
 }
 
 export interface SectionSchema {
@@ -184,6 +216,7 @@ export interface Deployment {
   cloudflare_project_id: string | null
   cloudflare_project_name: string | null
   live_url: string | null
+  stable_url: string | null
   custom_domain: string | null
   site_token: string | null
   screenshot_url: string | null
@@ -227,6 +260,7 @@ export interface Draft {
   project_name: string | null
   site_slug: string | null
   last_active_page: string
+  screenshot_url: string | null
   created_at: string
   updated_at: string
 }
@@ -239,8 +273,11 @@ export interface DraftCardData {
   current_step: number
   updated_at: string
   deployment_id: string | null
+  screenshot_url: string | null
   // Joined from deployments when deployment_id is set
   deployments?: { project_name: string; screenshot_url: string | null; status: DeploymentStatus } | null
+  // Joined from templates for thumbnail fallback
+  templates?: { preview_url: string | null } | null
 }
 
 export interface PendingImage {
@@ -286,7 +323,9 @@ export interface DeploymentCardData {
   has_unpublished_changes: boolean
   site_data: SiteData | null
   live_url: string | null
+  stable_url?: string | null
   updated_at: string
+  templates?: { slug: string } | null
 }
 
 export interface StatItemData {
@@ -320,4 +359,26 @@ export interface DeployEvent {
   status: 'running' | 'done' | 'error'
   message: string
   data?: { siteUrl?: string; repoUrl?: string; siteSlug?: string }
+}
+
+export interface DeployStepState {
+  id: DeployStepId
+  label: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  message?: string
+}
+
+export interface ValidationError {
+  field: string
+  message: string
+  type: 'missing_data' | 'blob_url' | 'default_image' | 'missing_required'
+}
+
+export const DEPLOY_STEP_LABELS: Record<DeployStepId, string> = {
+  upload_images: 'Upload Images',
+  create_repo: 'Create Repository',
+  inject_manifest: 'Inject Site Data',
+  cloudflare_setup: 'Configure Hosting',
+  save_record: 'Save Deployment',
+  cf_build: 'Build & Deploy',
 }

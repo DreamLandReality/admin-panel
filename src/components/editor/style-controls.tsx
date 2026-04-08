@@ -2,9 +2,10 @@
 
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
+import { ButtonGroup } from '@/components/primitives'
 import { getFieldDefaults } from '@/lib/utils/style-defaults'
 import { postToIframe } from '@/lib/utils/iframe'
-import type { ManifestSection, StyleControl } from '@/types'
+import type { ManifestSection, StyleControl, ResponsiveStyleValue } from '@/types'
 
 // ─── STYLE_ICONS ──────────────────────────────────────────────────────────────
 
@@ -12,6 +13,36 @@ const STYLE_ICONS: Record<string, string> = {
   'align-left': 'M3 6h18M3 10h12M3 14h18M3 18h12',
   'align-center': 'M3 6h18M6 10h12M3 14h18M6 18h12',
   'align-right': 'M3 6h18M9 10h12M3 14h18M9 18h12',
+}
+
+// ─── Device SVG Icons ─────────────────────────────────────────────────────────
+
+function MobileIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <line x1="10" y1="18" x2="14" y2="18" />
+    </svg>
+  )
+}
+
+function TabletIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="10" y1="18" x2="14" y2="18" />
+    </svg>
+  )
+}
+
+function DesktopIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  )
 }
 
 // ─── StyleSection ─────────────────────────────────────────────────────────────
@@ -29,17 +60,19 @@ export function StyleSection({
   controls: StyleControl[]
   iframeRef: React.RefObject<HTMLIFrameElement | null>
 }) {
-  const { sectionData, selectedTemplate, updateStyle } = useWizardStore()
+  const sectionData = useWizardStore((s) => s.sectionData)
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const updateStyle = useWizardStore((s) => s.updateStyle)
   const section = selectedTemplate?.manifest?.sections?.find((s: ManifestSection) => s.id === sectionId)
   const defaults = getFieldDefaults(section?.styleControls, styleKey)
   const rawSectionData = sectionData[sectionId]
   const overridesSource = Array.isArray(rawSectionData)
     ? ((sectionData[`${sectionId}__styles`] as Record<string, any>) ?? {})
     : (rawSectionData ?? {})
-  const overrides: Record<string, string> = (overridesSource[`${styleKey}__style`] as any) ?? {}
-  const currentStyle: Record<string, string> = { ...defaults, ...overrides }
+  const overrides: Record<string, any> = (overridesSource[`${styleKey}__style`] as any) ?? {}
+  const currentStyle: Record<string, any> = { ...defaults, ...overrides }
 
-  function applyStyle(styles: Record<string, string>) {
+  function applyStyle(styles: Record<string, any>) {
     updateStyle(sectionId, styleKey, styles)
     postToIframe(iframeRef, { type: 'style-update', sectionId, field: styleKey, styles })
   }
@@ -59,8 +92,8 @@ export function StyleSection({
 export function renderStyleControl(
   ctrl: StyleControl,
   index: number,
-  currentStyle: Record<string, string>,
-  applyStyle: (styles: Record<string, string>) => void,
+  currentStyle: Record<string, any>,
+  applyStyle: (styles: Record<string, any>) => void,
 ) {
   switch (ctrl.type) {
     case 'buttonGroup': {
@@ -88,6 +121,27 @@ export function renderStyleControl(
       )
     }
     case 'slider': {
+      if (ctrl.responsive) {
+        // Normalize: if the stored value is a flat string (e.g. template default "2rem"),
+        // convert it to a responsive object so the spread in onChange works correctly.
+        const rawVal = currentStyle[ctrl.property]
+        const responsiveVal: ResponsiveStyleValue =
+          (typeof rawVal === 'object' && rawVal !== null)
+            ? rawVal
+            : {
+                mobile: rawVal ?? ctrl.default ?? '',
+                tablet: rawVal ?? ctrl.default ?? '',
+                desktop: rawVal ?? ctrl.default ?? '',
+              }
+        return (
+          <ResponsiveStyleSlider
+            key={index}
+            ctrl={ctrl}
+            value={responsiveVal}
+            onChange={(v) => applyStyle({ [ctrl.property]: v })}
+          />
+        )
+      }
       const val = parseFloat(currentStyle[ctrl.property] ?? String(ctrl.min ?? 0))
       const unit = ctrl.unit ?? ''
       const display = unit ? `${val}${unit}` : String(val)
@@ -102,7 +156,7 @@ export function renderStyleControl(
           step={ctrl.step ?? 1}
           onChange={(v) => {
             const formatted = unit ? `${v}${unit}` : String(v)
-            const styles: Record<string, string> = { [ctrl.property]: formatted }
+            const styles: Record<string, any> = { [ctrl.property]: formatted }
             if (ctrl.linked) styles[ctrl.linked] = formatted
             applyStyle(styles)
           }}
@@ -125,6 +179,93 @@ export function renderStyleControl(
   }
 }
 
+// ─── ResponsiveStyleSlider ────────────────────────────────────────────────────
+
+const BREAKPOINTS = [
+  { key: 'mobile' as const, label: 'Mobile', width: '375px', icon: MobileIcon },
+  { key: 'tablet' as const, label: 'Tablet', width: '768px', icon: TabletIcon },
+  { key: 'desktop' as const, label: 'Desktop', width: '1440px', icon: DesktopIcon },
+]
+
+function ResponsiveStyleSlider({
+  ctrl,
+  value,
+  onChange,
+}: {
+  ctrl: StyleControl
+  value: ResponsiveStyleValue
+  onChange: (v: ResponsiveStyleValue) => void
+}) {
+  // Use global viewport so switching breakpoint here also resizes the preview iframe
+  const { viewport, setViewport } = useWizardStore((s) => ({ viewport: s.viewport, setViewport: s.setViewport }))
+  const unit = ctrl.unit ?? ''
+  const raw = value[viewport] ?? ctrl.default ?? ''
+  const numVal = parseFloat(raw as string) || (ctrl.min ?? 0)
+  const display = unit ? `${numVal}${unit}` : String(numVal)
+  const currentBreakpoint = BREAKPOINTS.find(b => b.key === viewport)
+
+  function handleChange(v: number) {
+    const formatted = unit ? `${v}${unit}` : String(v)
+    onChange({ ...value, [viewport]: formatted })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-label uppercase tracking-label text-muted-foreground">{ctrl.label}</p>
+        <span className="text-label tabular-nums text-primary font-medium">{display}</span>
+      </div>
+
+      {/* Breakpoint Tabs */}
+      <div className="flex gap-0.5 bg-black/20 border border-white/5 rounded-md p-0.5">
+        {BREAKPOINTS.map((b) => {
+          const Icon = b.icon
+          const isActive = viewport === b.key
+          return (
+            <button
+              key={b.key}
+              type="button"
+              onClick={() => setViewport(b.key)}
+              title={`${b.label} (${b.width})`}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded transition-all',
+                isActive
+                  ? 'bg-white/10 text-foreground shadow-sm'
+                  : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5'
+              )}
+            >
+              <Icon size={12} />
+              <span>{b.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Current value label */}
+      <div className="text-xs text-muted-foreground/50">
+        {currentBreakpoint?.label} ({currentBreakpoint?.width})
+      </div>
+
+      {/* Slider */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between text-xs text-muted-foreground/50">
+          <span>{ctrl.min ?? 0}{unit}</span>
+          <span>{ctrl.max ?? 100}{unit}</span>
+        </div>
+        <input
+          type="range"
+          min={ctrl.min ?? 0}
+          max={ctrl.max ?? 100}
+          step={ctrl.step ?? 1}
+          value={numVal}
+          onChange={(e) => handleChange(parseFloat(e.target.value))}
+          className="w-full accent-primary"
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── StyleButtonGroup ─────────────────────────────────────────────────────────
 
 export function StyleButtonGroup({
@@ -143,23 +284,11 @@ export function StyleButtonGroup({
   return (
     <div>
       <p className="text-label uppercase tracking-label text-muted-foreground mb-2">{label}</p>
-      <div className="flex gap-1">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => onSelect(opt.value)}
-            aria-pressed={current === opt.value}
-            className={cn(
-              'flex-1 h-8 rounded text-xs flex items-center justify-center transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500',
-              current === opt.value
-                ? 'bg-foreground text-background font-medium'
-                : 'bg-white/5 text-muted-foreground hover:bg-white/10'
-            )}
-          >
-            {renderIcon ? renderIcon(opt) : opt.label}
-          </button>
-        ))}
-      </div>
+      <ButtonGroup
+        options={options.map((o) => ({ value: o.value, label: renderIcon ? renderIcon(o) : o.label }))}
+        value={current ?? ''}
+        onChange={onSelect}
+      />
     </div>
   )
 }
@@ -187,7 +316,7 @@ export function StyleSlider({
     <div>
       <div className="flex items-center justify-between mb-2">
         <p className="text-label uppercase tracking-label text-muted-foreground">{label}</p>
-        <span className="text-[11px] text-muted-foreground tabular-nums">{display}</span>
+        <span className="text-label-lg text-muted-foreground tabular-nums">{display}</span>
       </div>
       <input
         type="range"
@@ -229,8 +358,8 @@ export function StyleColorGrid({
             className={cn(
               'w-full aspect-square rounded-md border-2 transition-colors',
               current === c.value
-                ? 'border-blue-500'
-                : 'border-transparent hover:border-white/20',
+                ? 'border-info'
+                : 'border-transparent hover:border-border-hover',
               c.value === 'transparent'
                 ? 'bg-transparent border-dashed'
                 : c.value === 'inherit'
@@ -249,7 +378,7 @@ export function StyleColorGrid({
           title="Custom color"
           className={cn(
             'w-full aspect-square rounded-md border-2 transition-colors cursor-pointer flex items-center justify-center relative overflow-hidden',
-            isCustom ? 'border-blue-500' : 'border-transparent hover:border-white/20'
+            isCustom ? 'border-info' : 'border-transparent hover:border-border-hover'
           )}
           style={isCustom ? { backgroundColor: current } : undefined}
         >

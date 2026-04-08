@@ -5,9 +5,9 @@ interface WizardShellProps {
   children: React.ReactNode
 }
 
-export function WizardShell({ currentStep, children }: WizardShellProps) {
+export function WizardShell({ children }: WizardShellProps) {
   return (
-    <div className="flex-1 flex flex-col overflow-auto">
+    <div className="flex-1 flex flex-col">
       {children}
     </div>
   )

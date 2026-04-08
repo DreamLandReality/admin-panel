@@ -2,9 +2,12 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, AlertCircle, Loader2 } from 'lucide-react'
+import { Building2, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { TextInput } from '@/components/forms'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils/cn'
+import { MobileGate } from '@/components/layout/mobile-gate'
 
 export default function LoginPage() {
     const router = useRouter()
@@ -30,7 +33,7 @@ export default function LoginPage() {
             setError('Email is required')
             return false
         }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email)) {
             setError('Enter a valid email address')
             return false
         }
@@ -108,25 +111,26 @@ export default function LoginPage() {
     }
 
     return (
+        <MobileGate>
         <div className="min-h-screen min-h-[100dvh] grid place-items-center bg-background relative overflow-hidden text-foreground antialiased">
-            {/* Dot pattern overlay */}
+            {/* Dot pattern overlay (now simplified without inline logic) */}
             <div
                 className="absolute inset-0 pointer-events-none opacity-20"
                 style={{
-                    backgroundImage: 'radial-gradient(circle at center, #ffffff 1px, transparent 1px)',
+                    backgroundImage: 'radial-gradient(circle at center, rgb(var(--foreground-muted)) 1px, transparent 1px)',
                     backgroundSize: '24px 24px',
                 }}
             />
 
             <div className={cn(
-                "relative w-full max-w-[420px] lg:max-w-[480px] bg-surface border border-white/10 rounded-xl shadow-soft px-8 py-12 lg:px-10 z-10",
+                "relative w-full max-w-[420px] lg:max-w-[480px] bg-surface border border-border-subtle rounded-xl shadow-soft px-8 py-12 lg:px-10 z-10",
                 shake && "animate-shake"
             )}>
 
                 <div className="flex flex-col items-center mb-10">
                     <Building2 className="w-8 h-8 text-accent mb-4" />
-                    <h1 className="font-serif text-[36px] font-semibold text-foreground leading-[1.2] tracking-[-0.01em] mb-2 text-center">
-                        Dream Reality
+                    <h1 className="font-serif text-4xl font-semibold text-foreground leading-tight tracking-tight mb-2 text-center">
+                        Dream Land Reality
                     </h1>
                     <h2 className="font-sans text-label uppercase tracking-label text-foreground-muted leading-[1.4] text-center">
                         AI ARCHITECTURE SUITE
@@ -140,8 +144,9 @@ export default function LoginPage() {
                             EMAIL
                         </label>
                         <div className="relative">
-                            <input
+                            <TextInput
                                 ref={emailInputRef}
+                                variant="underline"
                                 type="email"
                                 id="login-email"
                                 name="email"
@@ -150,8 +155,8 @@ export default function LoginPage() {
                                 disabled={isLoading}
                                 value={email}
                                 onChange={(e) => { setEmail(e.target.value); setError(null) }}
-                                placeholder="admin@dreamreality.com"
-                                className="h-12 w-full bg-transparent border-b border-white/20 px-0 py-2 text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                placeholder="admin@dreamlandrealty.com"
+                                className="h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                             <div className="absolute bottom-0 left-0 h-[1px] w-0 bg-accent transition-all duration-500 ease-out group-focus-within:w-full" />
                         </div>
@@ -162,7 +167,8 @@ export default function LoginPage() {
                             PASSWORD
                         </label>
                         <div className="relative">
-                            <input
+                            <TextInput
+                                variant="underline"
                                 type="password"
                                 id="login-password"
                                 name="password"
@@ -171,26 +177,25 @@ export default function LoginPage() {
                                 disabled={isLoading}
                                 value={password}
                                 onChange={(e) => { setPassword(e.target.value); setError(null) }}
-                                className="h-12 w-full bg-transparent border-b border-white/20 px-0 py-2 text-sm text-foreground focus:outline-none transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                             <div className="absolute bottom-0 left-0 h-[1px] w-0 bg-accent transition-all duration-500 ease-out group-focus-within:w-full" />
                         </div>
                     </div>
 
-                    <button
+                    <Button
                         type="submit"
+                        variant="primary"
+                        size="lg"
+                        loading={isLoading}
                         disabled={isLoading}
-                        className="w-full h-12 bg-foreground text-foreground-inverse hover:bg-white/90 disabled:bg-foreground disabled:opacity-90 disabled:cursor-not-allowed rounded-none font-medium text-sm tracking-wide transition-all duration-200 flex items-center justify-center mt-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface active:scale-[0.98]"
+                        className="w-full h-12 rounded-none tracking-wide mt-2 active:scale-[0.98] focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface"
                     >
-                        {isLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-foreground-inverse" />
-                        ) : (
-                            'Sign In'
-                        )}
-                    </button>
+                        {isLoading ? null : 'Sign In'}
+                    </Button>
 
                     {error && (
-                        <div className="mt-4 flex items-start gap-3 rounded-md border border-red-500/20 bg-red-500/10 p-3 px-4 text-[13px] text-red-500 animate-fade-in duration-300">
+                        <div role="alert" aria-live="polite" className="mt-4 flex items-start gap-3 rounded-md border border-error/20 bg-error/10 p-3 px-4 text-body-sm text-error animate-fade-in duration-300">
                             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                             <span>{error}</span>
                         </div>
@@ -199,5 +204,6 @@ export default function LoginPage() {
 
             </div>
         </div>
+        </MobileGate>
     )
 }

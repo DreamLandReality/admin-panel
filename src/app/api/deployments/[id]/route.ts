@@ -26,15 +26,11 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const { data: template, error: tplError } = await supabase
+  const { data: template } = await supabase
     .from('templates')
     .select('*')
     .eq('id', deployment.template_id)
-    .single()
-
-  if (tplError || !template) {
-    return NextResponse.json({ error: 'Template not found' }, { status: 404 })
-  }
+    .maybeSingle()
 
   return NextResponse.json({ data: { deployment, template } })
 }
@@ -55,11 +51,13 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await req.json()
-  const { site_data, action } = body as {
-    site_data: Record<string, unknown>
-    action: 'save' | 'republish'
+  let body: { site_data: Record<string, unknown>; action: 'save' | 'republish' | 'cancel' }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
+  const { site_data, action } = body
 
   if (!site_data || !action) {
     return NextResponse.json(
@@ -74,21 +72,55 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     .select('id')
     .eq('id', params.id)
     .eq('deployed_by', user.id)
-    .single()
+    .maybeSingle()
 
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const isRepublish = action === 'republish'
+  if (action === 'republish') {
+    return NextResponse.json({ error: 'republish via PATCH is not yet implemented — use POST /api/deploy' }, { status: 501 })
+  }
+
+  if (action === 'cancel') {
+    const { data: cancelled, error: cancelErr } = await supabase
+      .from('deployments')
+      .update({
+        status: 'failed' as const,
+        error_message: 'Cancelled by user',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', params.id)
+      .eq('deployed_by', user.id)
+      .in('status', ['deploying', 'building'])
+      .select('id, status, error_message, updated_at')
+      .maybeSingle()
+
+    if (cancelErr) {
+      return NextResponse.json({ error: cancelErr.message }, { status: 500 })
+    }
+    if (!cancelled) {
+      return NextResponse.json(
+        { error: 'Deployment is not in progress — cannot cancel.' },
+        { status: 409 }
+      )
+    }
+    return NextResponse.json({ data: cancelled })
+  }
+
+  // Extract screenshot from site_data using the same fallback logic as the deploy pipeline
+  const sd = site_data as any
+  const extractedScreenshot: string | null =
+    (typeof sd?.seo?.image === 'string' && sd.seo.image.startsWith('http') ? sd.seo.image : null) ??
+    (typeof sd?.hero?.backgroundImage === 'string' && sd.hero.backgroundImage.startsWith('http') ? sd.hero.backgroundImage : null) ??
+    null
 
   const { data, error } = await supabase
     .from('deployments')
     .update({
       site_data,
-      has_unpublished_changes: !isRepublish,
-      // For republish: transition to deploying (deploy pipeline will update further)
-      ...(isRepublish ? { status: 'deploying' } : {}),
+      has_unpublished_changes: true,
+      ...(extractedScreenshot ? { screenshot_url: extractedScreenshot } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', params.id)

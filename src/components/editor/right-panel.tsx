@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
+import { MousePointerClick } from 'lucide-react'
 import { useWizardStore } from '@/stores/wizard-store'
 import { SharedLabelsView } from './views/shared-labels-view'
 import { SectionFieldsView } from './views/section-fields-view'
 import { DetailGroupView } from './views/detail-group-view'
 import { ImageReplaceView } from './views/image-replace-view'
+import { EmptyState } from '@/components/dashboard/empty-state'
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
-export function RightPanel({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const { mode, sectionId } = useWizardStore((s) => s.selection)
+export const RightPanel = React.memo(function RightPanel({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
+  const { mode, sectionId, field } = useWizardStore((s) => s.selection)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Reset scroll to top whenever the selected component changes
@@ -18,10 +20,24 @@ export function RightPanel({ iframeRef }: { iframeRef: React.RefObject<HTMLIFram
     scrollRef.current?.scrollTo(0, 0)
   }, [sectionId])
 
+  // Scroll to field when iframe fires element-selected with a field name
+  useEffect(() => {
+    if (!field || !scrollRef.current) return
+    const el = scrollRef.current.querySelector(`[data-field-key="${field}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [field])
+
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto">
       {/* Nothing selected — prompt user to pick a component */}
-      {!sectionId && <EmptySelectionState />}
+      {!sectionId && (
+        <EmptyState
+          size="sm"
+          icon={<MousePointerClick className="h-4 w-4" />}
+          heading="Nothing selected"
+          description="Click a section to start editing"
+        />
+      )}
 
       {/* Image replace overlay (iframe image click) */}
       {sectionId && mode === 'image' && <ImageReplaceView iframeRef={iframeRef} />}
@@ -42,21 +58,5 @@ export function RightPanel({ iframeRef }: { iframeRef: React.RefObject<HTMLIFram
       )}
     </div>
   )
-}
+})
 
-// ─── EmptySelectionState ──────────────────────────────────────────────────────
-
-function EmptySelectionState() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
-      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-        </svg>
-      </div>
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        Select a component from the left panel to edit its content and styles.
-      </p>
-    </div>
-  )
-}

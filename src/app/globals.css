@@ -6,6 +6,8 @@
   :root {
     --background: 0 0% 98%;      /* #FAFAFA */
     --surface: 0 0% 100%;        /* #FFFFFF */
+    --surface-hover: 0 0% 96%;   /* #F5F5F5 hover equivalent to black/4 */
+    --surface-active: 0 0% 92%;  /* #EBEBEB active equivalent to black/8 */
     --foreground: 222 47% 11%;   /* #0F172A */
     --foreground-muted: 215 14% 65%; /* #94A3B8 */
     --foreground-inverse: 0 0% 93%; /* #EDEDED */
@@ -17,6 +19,7 @@
     
     --border: 214 32% 91%;       /* #E2E8F0 */
     --border-hover: 214 32% 80%;
+    --border-subtle: 214 32% 95%; /* Lighter border explicitly for list items, cards */
     
     /* Sidebar is always dark */
     --sidebar-bg: 222 47% 11%;   /* #0F172A */
@@ -38,20 +41,29 @@
     --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
     --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.1);
     --shadow-glow: 0 0 15px rgba(198, 168, 124, 0.3);
+    --shadow-nav-indicator: 0 0 8px rgba(0,0,0,0.15);
+    --shadow-ping-ring: 0 0 8px rgba(0,0,0,0.1);
+    --shadow-ping-dot: 0 0 4px rgba(0,0,0,0.2);
     
     --radius-md: 0.5rem;   /* 8px */
     --radius-lg: 0.75rem;  /* 12px */
+
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-serif: 'Playfair Display', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
   }
 
   .dark {
     --background: 240 10% 4%;    /* #09090B */
     --surface: 0 0% 7%;          /* #121212 */
+    --surface-hover: 0 0% 10%;   /* surface hover, equivalent to white/3 or /4 */
+    --surface-active: 0 0% 15%;  /* equivalent to white/8 */
     --foreground: 0 0% 93%;      /* #EDEDED */
     --foreground-muted: 0 0% 45%;/* #737373 */
     --foreground-inverse: 222 47% 11%; /* #0F172A */
 
-    --border: 0 0% 100%;         /* will use opacity /8 for 8% */
-    --border-hover: 0 0% 100%;   /* opacity /15 */
+    --border: 0 0% 15%;          /* Better definition than 100% white with alpha applied late */
+    --border-hover: 0 0% 20%;  
+    --border-subtle: 0 0% 10%;
 
     /* Sidebar matches background in dark mode */
     --sidebar-bg: 240 10% 4%;    /* #09090B */
@@ -64,15 +76,15 @@
     --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
     --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.5);
     --shadow-glow: 0 0 15px rgba(198, 168, 124, 0.15);
+    --shadow-nav-indicator: 0 0 8px rgba(255,255,255,0.4);
+    --shadow-ping-ring: 0 0 8px rgba(255,255,255,0.6);
+    --shadow-ping-dot: 0 0 4px rgba(255,255,255,0.8);
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
 }
 
@@ -84,4 +96,40 @@
 
 .animate-shake {
   animation: shake 400ms ease-out;
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.animate-shimmer {
+  /* Light mode: subtle dark wave over gray base */
+  background: linear-gradient(
+    90deg,
+    transparent 25%,
+    rgba(0, 0, 0, 0.05) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+.dark .animate-shimmer {
+  /* Dark mode: white glint wave over dark base */
+  background: linear-gradient(
+    90deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.09) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+}
+
+@layer components {
+  /* Shared base for all editor panel inputs */
+  .panel-input {
+    @apply w-full bg-surface-hover rounded-md px-2.5 py-1.5 text-xs text-foreground
+           border border-border-subtle focus:border-border-hover focus:outline-none transition-colors;
+  }
 }

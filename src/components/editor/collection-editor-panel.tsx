@@ -1,13 +1,16 @@
 'use client'
 
+import React from 'react'
+import { MousePointerClick } from 'lucide-react'
 import { useWizardStore } from '@/stores/wizard-store'
 import { slugify } from '@/lib/utils/slugify'
 import { SchemaFieldRenderer } from './schema-field-renderer'
+import { EmptyState } from '@/components/dashboard/empty-state'
 import type { Collection } from '@/types'
 
 // ─── CollectionEditorPanel ──────────────────────────────────────────────────
 
-export function CollectionEditorPanel() {
+export const CollectionEditorPanel = React.memo(function CollectionEditorPanel() {
   const selectedCollectionItem = useWizardStore((s) => s.selectedCollectionItem)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
   const collectionData = useWizardStore((s) => s.collectionData)
@@ -19,16 +22,12 @@ export function CollectionEditorPanel() {
 
   if (!selectedCollectionItem) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
-        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 7V4h16v3M9 20h6M12 4v16" />
-          </svg>
-        </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Select an item from the left panel to edit its fields.
-        </p>
-      </div>
+      <EmptyState
+        size="sm"
+        icon={<MousePointerClick className="h-4 w-4" />}
+        heading="Select an item"
+        description="Choose an item from the list to edit its fields"
+      />
     )
   }
 
@@ -91,4 +90,4 @@ export function CollectionEditorPanel() {
       )}
     </div>
   )
-}
+})

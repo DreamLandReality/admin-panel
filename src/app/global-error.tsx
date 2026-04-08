@@ -1,4 +1,6 @@
 'use client'
+import { useEffect } from 'react'
+import { ErrorState } from '@/components/feedback/ErrorState'
 
 export default function GlobalError({
   error,
@@ -7,21 +9,16 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[GlobalError]', error)
+    }
+  }, [error])
+
   return (
-    <html lang="en">
-      <body className="flex min-h-screen items-center justify-center bg-background text-white font-sans">
-        <div className="max-w-md text-center space-y-4 p-8">
-          <h1 className="text-2xl font-semibold">Something went wrong</h1>
-          <p className="text-sm text-neutral-400">
-            An unexpected error occurred. Please try again.
-          </p>
-          <button
-            onClick={reset}
-            className="px-4 py-2 rounded-lg bg-white text-black text-sm font-medium hover:bg-white/90 transition-colors"
-          >
-            Try again
-          </button>
-        </div>
+    <html>
+      <body className="bg-background text-foreground font-sans antialiased">
+        <ErrorState onRetry={reset} />
       </body>
     </html>
   )

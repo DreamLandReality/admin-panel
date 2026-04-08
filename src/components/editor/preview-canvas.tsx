@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWizardStore } from '@/stores/wizard-store'
 import { resolveAllSectionStyles } from '@/lib/utils/style-defaults'
 import { buildPageList } from '@/lib/utils/page-list'
 import { resolveReferences } from '@/lib/utils/collection-resolver'
 import { getIframeOrigin } from '@/lib/utils/iframe'
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback'
+import { Spinner } from '@/components/primitives'
 import type { Collection } from '@/types'
 
 const VIEWPORT_WIDTHS: Record<string, number> = {
@@ -32,7 +33,7 @@ interface PreviewCanvasProps {
   iframeRef: React.RefObject<HTMLIFrameElement>
 }
 
-export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasProps) {
+export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [iframeReady, setIframeReady] = useState(false)
@@ -41,11 +42,27 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
   const lastInlineEditTimestamp = useRef(0)
   const iframeLoadFallbackRef = useRef<ReturnType<typeof setTimeout>>()
 
-  const { viewport, sectionData, collectionData, sectionsRegistry, selectedTemplate, updateField, updateCollectionItem, updateArrayItemField, setSelection, clearSelection, setBlobUrl, setDataUrl, dataUrls, activePage } =
-    useWizardStore()
+  // ── Zustand selectors: subscribe only to fields needed for render/effects ──
+  const viewport = useWizardStore((s) => s.viewport)
+  const sectionData = useWizardStore((s) => s.sectionData)
+  const collectionData = useWizardStore((s) => s.collectionData)
+  const sectionsRegistry = useWizardStore((s) => s.sectionsRegistry)
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const dataUrls = useWizardStore((s) => s.dataUrls)
+  const activePage = useWizardStore((s) => s.activePage)
+  const isViewOnly = useWizardStore((s) => s.isViewOnly)
 
-  // Fallback to localhost:4321 when preview URL is empty/invalid
-  const effectivePreviewUrl = templatePreviewUrl || 'http://localhost:4321'
+  // Actions — stable references, never cause re-renders
+  const updateField = useWizardStore((s) => s.updateField)
+  const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
+  const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
+  const setSelection = useWizardStore((s) => s.setSelection)
+  const clearSelection = useWizardStore((s) => s.clearSelection)
+  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
+  const setDataUrl = useWizardStore((s) => s.setDataUrl)
+
+  // No localhost fallback — empty preview URL shows an error state instead
+  const effectivePreviewUrl = templatePreviewUrl
 
   // Derive base origin once from the preview URL
   const baseOrigin = useMemo(() => {
@@ -129,6 +146,28 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
     return `${baseOrigin}/${pageId}?preview=true`
   }
 
+  // Map an iframe pathname back to a pageId so the admin panel can sync activePage
+  // when the runtime sends a navigate-request instead of navigating directly.
+  function mapPathnameToPageId(pathname: string): string {
+    if (pathname === '/' || pathname === '') return 'home'
+    const manifest = selectedTemplate?.manifest
+    if (!manifest) return 'home'
+    // Static pages
+    const staticPage = manifest.pages?.find((p: any) => !p.dynamic && p.path === pathname)
+    if (staticPage) return staticPage.id
+    // Dynamic pages — extract slug from path
+    const dynamicPageDef = manifest.pages?.find((p: any) => p.dynamic)
+    if (dynamicPageDef) {
+      const basePath = dynamicPageDef.path.split('/:')[0]
+      if (pathname.startsWith(basePath + '/')) {
+        const slug = pathname.slice(basePath.length + 1)
+        if (slug) return slug
+      }
+    }
+    // Fallback: strip leading slash
+    return pathname.slice(1) || 'home'
+  }
+
   const deviceWidth = VIEWPORT_WIDTHS[viewport] ?? 1440
 
   // Compute scale factor from canvas container width
@@ -151,7 +190,7 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
     if (!iframeRef.current || !baseOrigin) return
     setIframeReady(false)
     iframeRef.current.src = getPageUrl(activePage)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePage, baseOrigin])
 
   // Send full update to iframe — injects resolved styles (manifest defaults + user overrides)
@@ -277,7 +316,7 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
       : resolvedData
 
     iframe.contentWindow.postMessage(
-      { type: 'full-update', data: finalData, sections: sectionsRegistry },
+      { type: 'full-update', data: finalData, sections: sectionsRegistry, editabilityMap: useWizardStore.getState().editabilityMap, isViewOnly, viewport: useWizardStore.getState().viewport },
       getIframeOrigin(effectivePreviewUrl)
     )
   }, [sectionData, collectionData, sectionsRegistry, selectedTemplate, activePage, effectivePreviewUrl, dataUrls])
@@ -315,13 +354,13 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
   // Listen for messages from iframe
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      // Accept localhost and same-origin messages only
+      // Accept same-origin and template preview origin; localhost only in development
       const origin = event.origin
+      const isLocalhost = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')
       if (
         origin !== window.location.origin
         && origin !== baseOrigin
-        && !origin.startsWith('http://localhost')
-        && !origin.startsWith('http://127.0.0.1')
+        && !(process.env.NODE_ENV !== 'production' && isLocalhost)
       ) {
         return
       }
@@ -336,6 +375,36 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
           sendFullUpdate()
           break
 
+        case 'component-selected':
+          if (typeof msg.sectionId !== 'string' || typeof msg.fieldPath !== 'string') return
+          // Handle page switching if needed
+          if (msg.pageId && msg.pageId !== activePage) {
+            useWizardStore.getState().setActivePage(msg.pageId)
+            // Wait for page to load before setting selection
+            setTimeout(() => {
+              setSelection({
+                mode: 'section',
+                sectionId: msg.sectionId,
+                field: msg.fieldPath,
+                elementType: msg.fieldType === 'image' ? 'image' : 'text',
+                content: '',
+              })
+              // Dispatch custom event for left panel to focus
+              window.dispatchEvent(new CustomEvent('editor:focus-section', { detail: { sectionId: msg.sectionId } }))
+            }, 100)
+          } else {
+            setSelection({
+              mode: 'section',
+              sectionId: msg.sectionId,
+              field: msg.fieldPath,
+              elementType: msg.fieldType === 'image' ? 'image' : 'text',
+              content: '',
+            })
+            // Dispatch custom event for left panel to focus
+            window.dispatchEvent(new CustomEvent('editor:focus-section', { detail: { sectionId: msg.sectionId } }))
+          }
+          break
+
         case 'element-selected':
           if (typeof msg.sectionId !== 'string' || typeof msg.field !== 'string') return
           setSelection({
@@ -344,7 +413,9 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
             field: msg.field,
             elementType: msg.elementType === 'image' ? 'image' : 'text',
             content: typeof msg.content === 'string' ? msg.content : '',
+            itemIndex: typeof msg.itemIndex === 'number' ? msg.itemIndex : null,
           })
+          window.dispatchEvent(new CustomEvent('editor:focus-section', { detail: { sectionId: msg.sectionId } }))
           break
 
         case 'field-edited':
@@ -354,6 +425,11 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
           // sendFullUpdate reads from collectionData/sectionData items, so route there.
           if (msg.sectionId.startsWith('detail:')) {
             routeDetailPageUpdate(msg.field, msg.value)
+          } else if (typeof msg.listName === 'string' && typeof msg.itemIndex === 'number') {
+            // Inline edit of a field inside an array item
+            useWizardStore.getState().updateArrayItemField(
+              msg.sectionId, msg.itemIndex, msg.field, msg.value, msg.listName
+            )
           } else {
             updateField(msg.sectionId, msg.field, msg.value)
           }
@@ -368,6 +444,16 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
         case 'deselect':
           clearSelection()
           break
+
+        case 'navigate-request': {
+          if (typeof msg.pathname !== 'string') break
+          const targetPageId = mapPathnameToPageId(msg.pathname)
+          if (targetPageId !== activePage) {
+            useWizardStore.getState().setActivePage(targetPageId)
+            clearSelection()
+          }
+          break
+        }
       }
     }
 
@@ -375,13 +461,50 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
     return () => window.removeEventListener('message', handleMessage)
   }, [sendFullUpdate, updateField, routeDetailPageUpdate, setSelection, clearSelection, baseOrigin])
 
-  // Re-send full update whenever data or dataUrls changes and iframe is ready (debounced for keystroke perf)
-  // Skip if inline edit happened very recently (prevents feedback loop)
+  // Re-send data to iframe whenever sectionData/sectionsRegistry/dataUrls changes.
+  // Optimization: if the change was a simple field edit (tracked via lastFieldUpdate),
+  // send a lightweight field-update message instead of the heavy full-update.
+  const lastFieldUpdate = useWizardStore((s) => s.lastFieldUpdate)
+  const prevFieldUpdateRef = useRef<typeof lastFieldUpdate>(null)
+
   useEffect(() => {
     if (!iframeReady) return
     if (Date.now() - lastInlineEditTimestamp.current < 50) return
+
+    // Check if this change was a single field update (not a bulk operation)
+    const lfu = lastFieldUpdate
+    if (
+      lfu &&
+      lfu !== prevFieldUpdateRef.current &&
+      lfu.ts > Date.now() - 100 &&
+      typeof lfu.value !== 'object' && // skip objects/arrays — need full-update for structural changes
+      !String(lfu.value).startsWith('blob:') // skip blob URLs — need dataUrl resolution via full-update
+    ) {
+      prevFieldUpdateRef.current = lfu
+      const iframe = iframeRef.current
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage(
+          { type: 'field-update', sectionId: lfu.sectionId, field: lfu.field, value: lfu.value },
+          getIframeOrigin(effectivePreviewUrl)
+        )
+      }
+      return
+    }
+    prevFieldUpdateRef.current = lfu
+
+    // Fallback: send full update for bulk operations, section toggles, etc.
     debouncedSendFullUpdate()
-  }, [sectionData, sectionsRegistry, dataUrls, iframeReady, debouncedSendFullUpdate])
+  }, [sectionData, sectionsRegistry, dataUrls, iframeReady, debouncedSendFullUpdate, lastFieldUpdate, effectivePreviewUrl])
+
+  // Notify iframe when viewport changes so the runtime can re-apply responsive styles.
+  // Covers ALL sources of viewport change (toolbar buttons AND responsive slider tabs).
+  useEffect(() => {
+    if (!iframeReady) return
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'viewport-change', viewport },
+      getIframeOrigin(effectivePreviewUrl)
+    )
+  }, [viewport, iframeReady, effectivePreviewUrl])
 
   // Re-sync iframe when switching back from data mode (data may have changed while iframe was hidden)
   const panelMode = useWizardStore((s) => s.panelMode)
@@ -389,7 +512,7 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
     if (panelMode === 'layers' && iframeReady) {
       sendFullUpdate()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelMode])
 
   // Scroll iframe to the selected section when selection changes (e.g. left panel click)
@@ -457,7 +580,8 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
     e.target.value = ''
   }
 
-  const iframeSrc = getPageUrl(activePage)
+  // Use about:blank when no preview URL so the iframe never loads localhost
+  const iframeSrc = templatePreviewUrl ? getPageUrl(activePage) : 'about:blank'
 
   return (
     <div ref={canvasRef} className="flex-1 min-w-0 bg-surface overflow-auto flex items-start justify-center py-6 px-6">
@@ -480,12 +604,19 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
           style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
         />
 
-        {!iframeReady && (
+        {!iframeReady && templatePreviewUrl && (
           <div className="absolute inset-0 bg-background/85 flex flex-col items-center justify-center gap-3 z-10">
-            <div className="w-5 h-5 border-2 border-white/15 border-t-white/60 rounded-full animate-spin" />
-            <span className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+            <Spinner size="md" variant="light" />
+            <span className="text-label uppercase tracking-loose text-muted-foreground">
               Loading
             </span>
+          </div>
+        )}
+
+        {!templatePreviewUrl && (
+          <div className="absolute inset-0 bg-surface flex flex-col items-center justify-center gap-2 z-10">
+            <p className="text-sm text-muted-foreground">Preview unavailable</p>
+            <p className="text-xs text-muted-foreground/60">This template has no preview URL configured.</p>
           </div>
         )}
       </div>
@@ -500,4 +631,4 @@ export function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasPr
       />
     </div>
   )
-}
+})

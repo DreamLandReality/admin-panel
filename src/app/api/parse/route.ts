@@ -24,6 +24,104 @@ function deepMerge(target: Record<string, any>, source: Record<string, any>): Re
   }
   return result
 }
+
+/**
+ * Convert a Claude tool input_schema to Gemini function declaration parameters.
+ * Gemini requires uppercase type names ("OBJECT", "STRING", etc.).
+ */
+function toGeminiSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema
+  const result: any = {}
+
+  if (schema.type) {
+    const t = (schema.type as string).toUpperCase()
+    // Gemini only accepts these specific types
+    if (['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'].includes(t)) {
+      result.type = t
+    } else {
+      // Fallback custom types like 'COLOR', 'IMAGE', etc. to 'STRING'
+      result.type = 'STRING'
+    }
+  }
+
+  if (schema.description) result.description = schema.description
+  if (schema.enum) result.enum = schema.enum
+  if (schema.properties) {
+    result.properties = {}
+    for (const [k, v] of Object.entries(schema.properties as Record<string, any>)) {
+      result.properties[k] = toGeminiSchema(v)
+    }
+  }
+  if (schema.items) result.items = toGeminiSchema(schema.items)
+  if (schema.required) result.required = schema.required
+  return result
+}
+
+/** Claude — forced tool_use, returns structured property data. */
+async function runClaude(
+  systemPrompt: string,
+  userPrompt: string,
+  tool: ReturnType<typeof buildToolSchema>
+): Promise<Record<string, any>> {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not configured')
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+    tools: [tool],
+    tool_choice: { type: 'tool', name: 'save_property_data' },
+  })
+
+  const toolUse = response.content.find((c) => c.type === 'tool_use')
+  if (!toolUse || toolUse.type !== 'tool_use') throw new Error('Claude did not return structured data')
+  return toolUse.input as Record<string, any>
+}
+
+/** Gemini — forced function calling via REST API, returns structured property data. */
+async function runGemini(
+  systemPrompt: string,
+  userPrompt: string,
+  tool: ReturnType<typeof buildToolSchema>
+): Promise<Record<string, any>> {
+  if (!process.env.GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY is not configured')
+
+  const body = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    tools: [{
+      function_declarations: [{
+        name: tool.name,
+        description: tool.description,
+        parameters: toGeminiSchema(tool.input_schema),
+      }],
+    }],
+    tool_config: {
+      function_calling_config: {
+        mode: 'ANY',
+        allowed_function_names: [tool.name],
+      },
+    },
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GOOGLE_API_KEY}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  )
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.error?.message ?? `Gemini API error ${res.status}`)
+  }
+
+  const data = await res.json()
+  const part = data?.candidates?.[0]?.content?.parts?.[0]
+  if (!part?.functionCall?.args) throw new Error('Gemini did not return structured data')
+  return part.functionCall.args as Record<string, any>
+}
+
 const parseLimiter = createRateLimiter({ windowMs: 60_000, max: 10 })
 
 export async function POST(req: Request) {
@@ -40,7 +138,11 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json()
-  const { templateId, rawText } = body as { templateId?: string; rawText?: string }
+  const { templateId, rawText, provider = 'claude' } = body as {
+    templateId?: string
+    rawText?: string
+    provider?: 'claude' | 'gemini'
+  }
 
   if (!templateId || !rawText?.trim()) {
     return NextResponse.json({ error: 'templateId and rawText are required' }, { status: 400 })
@@ -64,46 +166,23 @@ export async function POST(req: Request) {
   const { systemPrompt, userPrompt } = buildParsePrompt(sections, rawText.trim())
   const tool = buildToolSchema(sections)
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 })
-  }
-
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-  let response;
+  let aiData: Record<string, any>
   try {
-    response = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-      tools: [tool],
-      tool_choice: { type: 'tool', name: 'save_property_data' },
-    })
+    aiData = provider === 'gemini'
+      ? await runGemini(systemPrompt, userPrompt, tool)
+      : await runClaude(systemPrompt, userPrompt, tool)
   } catch (err: any) {
-    console.error('[parse] Anthropic API error:', err)
-    return NextResponse.json(
-      { error: err.message || 'AI service error' },
-      { status: 502 }
-    )
+    console.error(`[parse] ${provider} error:`, err)
+    return NextResponse.json({ error: err.message || 'AI service error' }, { status: 502 })
   }
-
-  const toolUse = response.content.find((c) => c.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    return NextResponse.json({ error: 'AI did not return structured data' }, { status: 500 })
-  }
-
-  const aiData = toolUse.input as Record<string, any>
 
   // Deep merge: AI data wins over template defaults for non-null values
   const merged: Record<string, any> = { ...(template.default_data ?? {}) }
   for (const [sectionId, sectionData] of Object.entries(aiData)) {
     if (sectionData == null) continue
     if (Array.isArray(sectionData)) {
-      // Array sections — replace directly, no merge
       merged[sectionId] = sectionData
     } else if (typeof sectionData === 'object') {
-      // Object sections — deep merge preserves nested defaults (e.g. cta.href)
       merged[sectionId] = deepMerge(merged[sectionId] ?? {}, sectionData)
     }
   }
@@ -112,10 +191,5 @@ export async function POST(req: Request) {
   const _sections: Record<string, { enabled: boolean }> = {}
   sections.forEach((s) => { _sections[s.id] = { enabled: true } })
 
-  return NextResponse.json({
-    sectionData: merged,
-    _sections,
-    provider: 'claude',
-    tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
-  })
+  return NextResponse.json({ sectionData: merged, _sections, provider })
 }

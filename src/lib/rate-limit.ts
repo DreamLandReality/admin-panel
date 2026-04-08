@@ -44,6 +44,8 @@ export function createRateLimiter({ windowMs, max }: RateLimiterOptions) {
   }
 
   return {
+    /** Maximum requests allowed per window — use this to build X-RateLimit-Limit headers. */
+    limit: max,
     check(key: string): RateLimitResult {
       const now = Date.now()
       const timestamps = (hits.get(key) ?? []).filter((t) => now - t < windowMs)

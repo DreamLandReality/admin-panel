@@ -6,6 +6,7 @@ import { usePageList } from '@/hooks/use-page-list'
 import { postToIframe } from '@/lib/utils/iframe'
 import { slugify } from '@/lib/utils/slugify'
 import { SchemaFieldRenderer } from '../schema-field-renderer'
+import { PanelHeader } from '@/components/layout/PanelHeader'
 import type { ManifestSection, FieldGroup } from '@/types'
 
 // ─── DetailGroupView ─────────────────────────────────────────────────────────
@@ -117,9 +118,7 @@ export function DetailGroupView({ groupId, iframeRef }: { groupId: string; ifram
 
   return (
     <div>
-      <div className="sticky top-0 z-10 px-4 pt-4 pb-3 bg-editor-surface border-b border-white/5">
-        <p className="text-label-lg uppercase tracking-label text-muted-foreground">{groupEntry?.label ?? groupId}</p>
-      </div>
+      <PanelHeader title={groupEntry?.label ?? groupId} sticky />
 
       <div className="px-4 space-y-3 pb-4 pt-3">
         <SchemaFieldRenderer

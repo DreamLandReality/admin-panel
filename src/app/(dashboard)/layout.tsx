@@ -1,5 +1,7 @@
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
+import { MobileGate } from '@/components/layout/mobile-gate'
+import { ThemedToaster } from '@/components/themed-toaster'
 
 export default function DashboardLayout({
     children,
@@ -7,14 +9,17 @@ export default function DashboardLayout({
     children: React.ReactNode
 }) {
     return (
-        <div className="flex h-screen overflow-hidden bg-background w-full">
-            <Sidebar />
-            <div className="flex flex-1 flex-col overflow-hidden relative">
-                <Header />
-                <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-10 focus:outline-none">
-                    {children}
-                </main>
+        <MobileGate>
+            <div className="flex h-screen overflow-hidden bg-background w-full">
+                <Sidebar />
+                <div className="flex flex-1 flex-col overflow-hidden relative">
+                    <Header />
+                    <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-5 sm:p-8 lg:p-10 focus:outline-none">
+                        {children}
+                    </main>
+                </div>
             </div>
-        </div>
+            <ThemedToaster />
+        </MobileGate>
     )
 }

@@ -1,18 +1,28 @@
 import type { PendingImage } from '@/types'
+import { fetchWithTimeout } from './fetch-with-timeout'
 
 const CONCURRENCY = 4
 
+export interface UploadResult {
+  /** Map of blobUrl → R2 public URL for all successful uploads */
+  urlMap: Map<string, string>
+  /** blobUrls that failed to upload — callers should abort deploy if non-empty */
+  failed: string[]
+}
+
 /**
- * Upload all pending blob images to R2 in batches.
- * Returns a Map of blobUrl → r2PublicUrl for replacing in data.
+ * Upload all pending blob images to R2 in batches of CONCURRENCY.
+ * Returns a result object with the URL map and any failed blobUrls so callers
+ * can decide whether to abort or warn based on the failures.
  */
 export async function uploadPendingImages(
   pendingImages: Record<string, PendingImage>
-): Promise<Map<string, string>> {
+): Promise<UploadResult> {
   const urlMap = new Map<string, string>()
+  const failed: string[] = []
   const entries = Object.entries(pendingImages)
 
-  if (entries.length === 0) return urlMap
+  if (entries.length === 0) return { urlMap, failed }
 
   const chunks: (typeof entries)[] = []
   for (let i = 0; i < entries.length; i += CONCURRENCY) {
@@ -21,12 +31,12 @@ export async function uploadPendingImages(
 
   for (const chunk of chunks) {
     const results = await Promise.allSettled(
-      chunk.map(async ([_key, pending]) => {
+      chunk.map(async ([, pending]) => {
         const formData = new FormData()
         formData.append('file', pending.file)
         formData.append('objectKey', pending.r2Key)
 
-        const res = await fetch('/api/r2/upload', { method: 'POST', body: formData })
+        const res = await fetchWithTimeout('/api/r2/upload', { method: 'POST', body: formData }, 60_000)
         const data = await res.json()
 
         if (!res.ok || data.error) {
@@ -34,17 +44,20 @@ export async function uploadPendingImages(
         }
 
         urlMap.set(pending.blobUrl, data.url)
+        return pending.blobUrl
       })
     )
 
-    for (const r of results) {
+    chunk.forEach(([, pending], i) => {
+      const r = results[i]
       if (r.status === 'rejected') {
-        console.error('[uploadPendingImages] Failed:', r.reason)
+        console.error('[uploadPendingImages] Failed to upload:', pending.r2Key, r.reason)
+        failed.push(pending.blobUrl)
       }
-    }
+    })
   }
 
-  return urlMap
+  return { urlMap, failed }
 }
 
 /**

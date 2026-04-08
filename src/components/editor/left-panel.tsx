@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
 import { usePageList } from '@/hooks/use-page-list'
+import { Toggle, ButtonGroup } from '@/components/primitives'
 import { CollectionsPanel } from './collections-panel'
+import { postToIframe } from '@/lib/utils/iframe'
 import type { ManifestSection, FieldGroup } from '@/types'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -50,38 +52,10 @@ function getSectionIcon(id: string): string {
   return icons[id] ?? 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
 }
 
-// ─── Toggle ───────────────────────────────────────────────────────────────────
-
-function Toggle({
-  enabled,
-  onChange,
-}: {
-  enabled: boolean
-  onChange: (v: boolean) => void
-}) {
-  return (
-    <button
-      role="switch"
-      aria-checked={enabled}
-      onClick={() => onChange(!enabled)}
-      className={cn(
-        "relative h-[14px] w-[24px] rounded-full transition-colors",
-        enabled ? "bg-white/50" : "bg-white/10"
-      )}
-    >
-      <span
-        className={cn(
-          "absolute top-[1px] left-[1px] h-3 w-3 rounded-full bg-background transition-transform duration-200",
-          enabled ? "translate-x-[10px]" : "translate-x-0"
-        )}
-      />
-    </button>
-  )
-}
-
 // ─── ComponentRow ─────────────────────────────────────────────────────────────
 
 function ComponentRow({
+  sectionId,
   iconPath,
   label,
   active,
@@ -89,6 +63,7 @@ function ComponentRow({
   onToggle,
   onClick,
 }: {
+  sectionId?: string
   iconPath: string
   label: string
   active: boolean
@@ -98,12 +73,14 @@ function ComponentRow({
 }) {
   return (
     <div
+      data-section-row={sectionId}
       onClick={onClick}
       className={cn(
         'group flex items-center gap-2 px-2 py-1.5 mx-1 rounded-md cursor-pointer transition-colors',
         active
           ? 'bg-white/10 text-foreground'
-          : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+          : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
+        enabled === false && 'opacity-40'
       )}
     >
       <div className="w-5 h-5 rounded flex items-center justify-center bg-white/5 flex-shrink-0">
@@ -117,7 +94,7 @@ function ComponentRow({
           onClick={(e) => e.stopPropagation()}
           className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
         >
-          <Toggle enabled={enabled ?? true} onChange={onToggle} />
+          <Toggle checked={enabled ?? true} onChange={onToggle} />
         </div>
       )}
     </div>
@@ -126,31 +103,61 @@ function ComponentRow({
 
 // ─── LeftPanel ────────────────────────────────────────────────────────────────
 
-export function LeftPanel() {
+export const LeftPanel = React.memo(function LeftPanel({ iframeRef }: { iframeRef?: React.RefObject<HTMLIFrameElement | null> }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [pagePickerOpen, setPagePickerOpen] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
   const panelMode = useWizardStore((s) => s.panelMode)
   const setPanelMode = useWizardStore((s) => s.setPanelMode)
 
-  const {
-    selectedTemplate,
-    activePage,
-    setActivePage,
-    sectionsRegistry,
-    toggleSection,
-    setSelection,
-    clearSelection,
-    selection,
-  } = useWizardStore()
+  // ── Zustand selectors: subscribe only to fields needed for render ──
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const activePage = useWizardStore((s) => s.activePage)
+  const sectionsRegistry = useWizardStore((s) => s.sectionsRegistry)
+  const selection = useWizardStore((s) => s.selection)
+
+  // Actions — stable references
+  const setActivePage = useWizardStore((s) => s.setActivePage)
+  const toggleSection = useWizardStore((s) => s.toggleSection)
+  const setSelection = useWizardStore((s) => s.setSelection)
+  const clearSelection = useWizardStore((s) => s.clearSelection)
+
+  // Scroll the section row into view when the iframe fires element-selected
+  const selectedSectionId = selection.sectionId
+  useEffect(() => {
+    if (!selectedSectionId || !listRef.current) return
+    const el = listRef.current.querySelector(`[data-section-row="${selectedSectionId}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [selectedSectionId])
+
+  // Listen for editor:focus-section event from preview-canvas
+  useEffect(() => {
+    function handleFocusSection(event: CustomEvent) {
+      const { sectionId } = event.detail
+      if (!sectionId || !listRef.current) return
+      
+      // Find and scroll to the section
+      const el = listRef.current.querySelector(`[data-section-row="${sectionId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        // Add pulse animation
+        el.classList.add('animate-pulse')
+        setTimeout(() => el.classList.remove('animate-pulse'), 1000)
+      }
+    }
+
+    window.addEventListener('editor:focus-section', handleFocusSection as EventListener)
+    return () => window.removeEventListener('editor:focus-section', handleFocusSection as EventListener)
+  }, [])
 
   const manifest = selectedTemplate?.manifest
   const allSections: ManifestSection[] = manifest?.sections ?? []
   const hasCollections = Array.isArray(manifest?.collections) && manifest.collections.length > 0
   const pages = usePageList()
 
-  const staticPages = pages.filter((p) => p.kind === 'static')
-  const dynamicParents = pages.filter((p) => p.kind === 'dynamic-parent')
-  const dynamicChildren = pages.filter((p) => p.kind === 'dynamic')
+  const staticPages = useMemo(() => pages.filter((p) => p.kind === 'static'), [pages])
+  const dynamicParents = useMemo(() => pages.filter((p) => p.kind === 'dynamic-parent'), [pages])
+  const dynamicChildren = useMemo(() => pages.filter((p) => p.kind === 'dynamic'), [pages])
 
   // Current page entry for dropdown label + dynamic page checks
   const currentPageEntry = pages.find((p) => p.id === activePage)
@@ -242,6 +249,9 @@ export function LeftPanel() {
 
   function handleComponentClick(sectionId: string) {
     setSelection({ mode: 'section', sectionId, field: null, elementType: null, content: null })
+    if (iframeRef) {
+      postToIframe(iframeRef, { type: 'scroll-to-section', sectionId })
+    }
   }
 
   return (
@@ -257,30 +267,16 @@ export function LeftPanel() {
         isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
       )}>
         {!isCollapsed && hasCollections ? (
-          <div className="flex gap-0.5 bg-white/5 rounded p-0.5">
-            <button
-              onClick={() => setPanelMode('layers')}
-              className={cn(
-                'px-2 py-0.5 rounded text-xs uppercase tracking-label transition-colors',
-                panelMode === 'layers'
-                  ? 'bg-white/10 text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Layers
-            </button>
-            <button
-              onClick={() => setPanelMode('data')}
-              className={cn(
-                'px-2 py-0.5 rounded text-xs uppercase tracking-label transition-colors',
-                panelMode === 'data'
-                  ? 'bg-white/10 text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Data
-            </button>
-          </div>
+          <ButtonGroup
+            size="sm"
+            options={[
+              { value: 'layers', label: 'Layers' },
+              { value: 'data', label: 'Data' },
+            ]}
+            value={panelMode}
+            onChange={(v) => setPanelMode(v as 'layers' | 'data')}
+            className="bg-white/10 rounded p-0.5 gap-1"
+          />
         ) : !isCollapsed ? (
           <span className="text-label uppercase tracking-label text-muted-foreground">Layers</span>
         ) : null}
@@ -367,7 +363,7 @@ export function LeftPanel() {
           </div>
 
           {/* Component list */}
-          <div className="flex-1 overflow-y-auto py-1.5">
+          <div ref={listRef} className="flex-1 overflow-y-auto py-1.5">
             {/* Dynamic parent pages: shared label component groups (or single fallback row) */}
             {isDynamicParent && parentLabelTarget && (
               sharedFieldGroups.length > 0
@@ -376,6 +372,7 @@ export function LeftPanel() {
                     return (
                       <ComponentRow
                         key={rowId}
+                        sectionId={rowId}
                         iconPath={group.icon}
                         label={group.label}
                         active={selection.sectionId === rowId}
@@ -391,6 +388,7 @@ export function LeftPanel() {
                     return (
                       <ComponentRow
                         key="shared-labels"
+                        sectionId={labelRowId}
                         iconPath="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
                         label={sharedSection?.name ?? 'Detail Page Labels'}
                         active={selection.sectionId === labelRowId}
@@ -404,6 +402,7 @@ export function LeftPanel() {
             {isDynamicPage && fieldGroups.map((group) => (
               <ComponentRow
                 key={`detail:${group.id}`}
+                sectionId={`detail:${group.id}`}
                 iconPath={group.icon}
                 label={group.label}
                 active={selection.sectionId === `detail:${group.id}`}
@@ -417,6 +416,7 @@ export function LeftPanel() {
                 {pageSections.map((section) => (
                   <ComponentRow
                     key={section.id}
+                    sectionId={section.id}
                     iconPath={getSectionIcon(section.id)}
                     label={section.name}
                     active={selection.sectionId === section.id}
@@ -433,6 +433,7 @@ export function LeftPanel() {
                 {globalSections.map((section) => (
                   <ComponentRow
                     key={section.id}
+                    sectionId={section.id}
                     iconPath={getSectionIcon(section.id)}
                     label={section.name}
                     active={selection.sectionId === section.id}
@@ -536,4 +537,4 @@ export function LeftPanel() {
       )}
     </div>
   )
-}
+})

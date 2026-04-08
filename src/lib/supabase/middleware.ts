@@ -2,6 +2,9 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { env } from '@/lib/env'
 
+// Accessing env.SUPABASE_URL and env.SUPABASE_ANON_KEY below acts as eager
+// startup validation — if either is missing the getter throws immediately on
+// the first request, surfacing the problem before any auth logic runs.
 export async function updateSession(request: NextRequest) {
     let supabaseResponse = NextResponse.next({
         request,
@@ -30,9 +33,22 @@ export async function updateSession(request: NextRequest) {
 
     const {
         data: { user },
+        error,
     } = await supabase.auth.getUser()
 
     const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
+
+    // Stale refresh token — clear all sb-* cookies and redirect to login
+    if (error?.code === 'refresh_token_not_found' || error?.code === 'bad_jwt') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        url.search = ''
+        const redirect = NextResponse.redirect(url)
+        request.cookies.getAll().forEach(({ name }) => {
+            if (name.startsWith('sb-')) redirect.cookies.delete(name)
+        })
+        return redirect
+    }
 
     // Not logged in and not on login page
     if (!user && !isAuthRoute) {

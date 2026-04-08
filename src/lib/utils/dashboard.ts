@@ -2,6 +2,7 @@ import type { DeploymentCardData, DeploymentStatus, SiteData, StatItemData } fro
 
 // ─── Stats Computation ───────────────────────────────────────────────────────
 
+/** Aggregate deployment counts for the header stat bar. */
 export function computeStats(deployments: DeploymentCardData[]): StatItemData[] {
   const total = deployments.length
   const live = deployments.filter(d => d.status === 'live').length
@@ -18,6 +19,10 @@ export function computeStats(deployments: DeploymentCardData[]): StatItemData[] 
 
 // ─── Thumbnail Fallback Chain ────────────────────────────────────────────────
 
+/**
+ * Resolve a display image for a deployment card.
+ * Priority: Puppeteer screenshot → SEO/OG image from site_data → generated gradient SVG.
+ */
 export function getThumbnailSrc(deployment: DeploymentCardData): string {
   // Tier 1: Platform screenshot
   if (deployment.screenshot_url) {
@@ -95,6 +100,7 @@ const UNITS: { unit: Intl.RelativeTimeFormatUnit; ms: number }[] = [
 
 const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
+/** Format an ISO date string as a human-relative string, e.g. "3 days ago". */
 export function formatRelativeTime(isoDate: string): string {
   const diff = new Date(isoDate).getTime() - Date.now()
 

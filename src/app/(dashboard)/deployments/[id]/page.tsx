@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import type { Deployment, Template, Draft } from '@/types'
+import type { Deployment, Template } from '@/types'
 import { EditDeploymentLoader } from './edit-deployment-loader'
 
 export const dynamic = 'force-dynamic'
@@ -38,19 +38,10 @@ export default async function EditDeploymentPage({
 
   if (!template) notFound()
 
-  // Check for an existing edit-site draft for this deployment
-  const { data: editDraft } = await supabase
-    .from('drafts')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('deployment_id', params.id)
-    .maybeSingle()
-
   return (
     <EditDeploymentLoader
       deployment={deployment as Deployment}
       template={template as Template}
-      editDraft={(editDraft as Draft) ?? null}
     />
   )
 }

@@ -1,7 +1,7 @@
 import { useRef, useCallback } from 'react'
 
 interface UseImageUploadReturn {
-  fileInputRef: React.RefObject<HTMLInputElement | null>
+  fileInputRef: React.RefObject<HTMLInputElement>
   triggerUpload: () => void
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 }

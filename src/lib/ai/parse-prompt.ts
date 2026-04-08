@@ -1,12 +1,11 @@
 import type { ManifestSection } from '@/types'
-
-// Sections skipped from AI extraction — must match schema-to-tool.ts
-const SKIP_SECTIONS = new Set(['seo', 'navigation', 'footer'])
+import { findAiSkipSections } from '@/lib/constants'
 
 function collectAiHints(sections: ManifestSection[]): string {
+  const skipSections = findAiSkipSections(sections as any[])
   const hints: string[] = []
   for (const section of sections) {
-    if (SKIP_SECTIONS.has(section.id)) continue
+    if (skipSections.has(section.id)) continue
     const schema = section.schema as any
     const props = schema?.type === 'array' ? schema.items?.properties : schema?.properties
     if (!props) continue
@@ -20,8 +19,9 @@ function collectAiHints(sections: ManifestSection[]): string {
 }
 
 export function buildParsePrompt(sections: ManifestSection[], rawText: string) {
+  const skipSections = findAiSkipSections(sections as any[])
   const sectionSummary = sections
-    .filter((s) => !SKIP_SECTIONS.has(s.id))
+    .filter((s) => !skipSections.has(s.id))
     .map((s) => `${s.id} (${s.description})`)
     .join(', ')
 
@@ -34,7 +34,11 @@ Rules:
 - Use null for any field absent from the text — never invent data
 - Detect locale from context (INR/crore/lakh/BHK = India; AED/dirham = Dubai; SGD = Singapore)
 - For arrays, extract every item mentioned
-- Generate SEO title (<60 chars), description (<155 chars), 5–8 keywords
+- Generate SEO metadata:
+  * title: 30-60 chars, include property type + location + key feature
+  * description: 120-155 chars, compelling summary with price and top amenities
+  * keywords: 5-8 items prioritizing property type, location, unique features
+  * structuredData: fill propertyName, propertyType, priceRange, address fields from text
 - Prices: numeric where possible, string with currency symbol acceptable
 
 Sections: ${sectionSummary}${hintsBlock}`

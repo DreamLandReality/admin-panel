@@ -2,48 +2,50 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { cn } from '@/lib/utils/cn'
+import { toast } from 'sonner'
 import { useWizardStore } from '@/stores/wizard-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
+import { extractDraftThumbnail } from '@/lib/utils/draft-thumbnail'
+import { Button } from '@/components/ui/button'
+import { Spinner, Heading, ButtonGroup } from '@/components/primitives'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
+import { useDeployTransitionStore } from '@/stores/deploy-transition-store'
+import { getIframeOrigin } from '@/lib/utils/iframe'
 import { PreviewCanvas } from './preview-canvas'
 import { RightPanel } from './right-panel'
 import { LeftPanel } from './left-panel'
 import { CollectionEditorPanel } from './collection-editor-panel'
 
 const VIEWPORT_OPTIONS = [
-  {
-    value: 'desktop' as const,
-    label: 'Desktop',
-    icon: 'M3 4h18v12H3zM8 20h8M12 16v4',
-  },
-  {
-    value: 'tablet' as const,
-    label: 'Tablet',
-    icon: 'M4 4h16v16H4zM10 18h4',
-  },
-  {
-    value: 'mobile' as const,
-    label: 'Mobile',
-    icon: 'M7 2h10v20H7zM10 18h4',
-  },
+  { value: 'desktop' as const, label: 'Desktop', icon: 'M3 4h18v12H3zM8 20h8M12 16v4' },
+  { value: 'tablet'  as const, label: 'Tablet',  icon: 'M4 4h16v16H4zM10 18h4' },
+  { value: 'mobile'  as const, label: 'Mobile',  icon: 'M7 2h10v20H7zM10 18h4' },
 ]
 
 export function EditorShell() {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const router = useRouter()
-  const {
-    selectedTemplate, isDirty, viewport, setViewport, setStep, panelMode,
-    projectName, draftId, setDraftId, deploymentId, pendingImages,
-    sectionData, sectionsRegistry, collectionData, activePage, rawText,
-    isViewOnly,
-  } = useWizardStore()
+
+  // ── Zustand selectors: subscribe only to the fields each render path needs ──
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const isDirty = useWizardStore((s) => s.isDirty)
+  const viewport = useWizardStore((s) => s.viewport)
+  const panelMode = useWizardStore((s) => s.panelMode)
+  const projectName = useWizardStore((s) => s.projectName)
+  const draftId = useWizardStore((s) => s.draftId)
+  const deploymentId = useWizardStore((s) => s.deploymentId)
+  const isViewOnly = useWizardStore((s) => s.isViewOnly)
+
+  // Actions — stable references, never cause re-renders
+  const setViewport = useWizardStore((s) => s.setViewport)
+  const setStep = useWizardStore((s) => s.setStep)
+  const setDraftId = useWizardStore((s) => s.setDraftId)
 
   const isEditMode = deploymentId !== null
+  const previewUrl = selectedTemplate?.preview_url ?? selectedTemplate?.config?.previewUrl ?? ''
 
   const [saving, setSaving] = useState(false)
   const [showBackModal, setShowBackModal] = useState(false)
-  const [showComingSoon, setShowComingSoon] = useState(false)
 
   // Revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -67,7 +69,7 @@ export function EditorShell() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
-  // ── Back navigation ────────────────────────────────────────────────────────
+  // ── Back navigation ──────────────────────────────────────────────────────────
 
   const handleBack = useCallback(() => {
     if (isViewOnly) {
@@ -77,7 +79,6 @@ export function EditorShell() {
     if (isDirty) {
       setShowBackModal(true)
     } else if (isEditMode) {
-      // Edit mode: reset store and go back to dashboard
       useWizardStore.getState().reset()
       router.push('/')
     } else {
@@ -94,25 +95,26 @@ export function EditorShell() {
     Object.values(pending).forEach(({ blobUrl }) => URL.revokeObjectURL(blobUrl))
 
     if (isEditMode) {
-      // Edit mode: drop local edits, go back to dashboard
       useWizardStore.getState().reset()
       router.push('/')
     } else if (draftId) {
-      // New-site draft saved: discard pending blobs, clear dirty, back to step 2
       useWizardStore.setState({ isDirty: false, pendingImages: {}, blobUrls: {} })
       setStep(2)
     } else {
-      // No draft: wipe everything
       useWizardStore.getState().reset()
     }
   }
 
-  // ── Shared upload helper ───────────────────────────────────────────────────
+  // ── Shared upload helper ─────────────────────────────────────────────────────
 
   async function uploadAndResolve() {
-    const urlMap = await uploadPendingImages(pendingImages)
-    const finalSectionData = replaceBlobUrls(sectionData, urlMap)
-    const finalCollectionData = replaceBlobUrls(collectionData, urlMap)
+    const store = useWizardStore.getState()
+    const { urlMap, failed } = await uploadPendingImages(store.pendingImages)
+    if (failed.length > 0) {
+      console.warn(`[editor] ${failed.length} image(s) failed to upload — draft may be missing images.`)
+    }
+    const finalSectionData = replaceBlobUrls(store.sectionData, urlMap)
+    const finalCollectionData = replaceBlobUrls(store.collectionData, urlMap)
     if (urlMap.size > 0) {
       useWizardStore.setState({
         sectionData: finalSectionData,
@@ -124,21 +126,24 @@ export function EditorShell() {
     return { finalSectionData, finalCollectionData }
   }
 
-  // ── Save Draft (both modes) ────────────────────────────────────────────────
-  // New-site:  upserts by (user_id, project_name)     — no deployment_id
-  // Edit-site: SELECT-first logic in the API          — deployment_id included
+  // ── Save Draft ────────────────────────────────────────────────────────────────
 
   async function handleSaveDraft() {
     if (saving) return
     setSaving(true)
     try {
       const { finalSectionData, finalCollectionData } = await uploadAndResolve()
-
+      const screenshot_url =
+        extractDraftThumbnail(finalSectionData) ??
+        selectedTemplate?.preview_url ??
+        selectedTemplate?.config?.previewUrl ??
+        null
+      const { rawText, sectionsRegistry, activePage } = useWizardStore.getState()
       const res = await fetch('/api/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          project_name: isEditMode ? null : projectName,
+          project_name: projectName,
           template_slug: selectedTemplate?.slug ?? '',
           template_id: selectedTemplate?.id ?? null,
           current_step: 3,
@@ -147,61 +152,86 @@ export function EditorShell() {
           sections_registry: sectionsRegistry,
           collection_data: finalCollectionData,
           last_active_page: activePage,
-          ...(isEditMode ? { deployment_id: deploymentId } : {}),
+          screenshot_url,
         }),
       })
-
       const data = await res.json()
       if (res.ok && data.data?.id) {
         setDraftId(data.data.id)
         useWizardStore.setState({ isDirty: false })
+        toast.success('Draft saved')
+        // Fire-and-forget: generate real content screenshot async (non-blocking)
+        void fetch('/api/screenshot/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ draft_id: data.data.id }),
+        }).catch(() => { /* non-fatal */ })
+      } else {
+        toast.error(data?.error ?? 'Draft save failed. Please try again.')
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[SaveDraft] Failed:', err)
+      toast.error(err?.message ?? 'Draft save failed. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  // ── Save Changes (edit mode only) ──────────────────────────────────────────
-  // Persists the current editor state back to the deployment's site_data
-  // and sets has_unpublished_changes = true. Does NOT trigger a redeploy.
+  // ── Save Changes (edit mode only) ─────────────────────────────────────────────
 
   async function handleSaveChanges() {
     if (saving || !deploymentId) return
     setSaving(true)
     try {
       const { finalSectionData, finalCollectionData } = await uploadAndResolve()
-
       const site_data = {
-        _sections: sectionsRegistry,
+        _sections: useWizardStore.getState().sectionsRegistry,
         ...finalSectionData,
-        // collectionData is not stored in site_data (managed in template manifest)
-        // but include it if the template uses it
         ...(Object.keys(finalCollectionData).length > 0
           ? { _collections: finalCollectionData }
           : {}),
       }
-
       const res = await fetch(`/api/deployments/${deploymentId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ site_data, action: 'save' }),
       })
-
       if (res.ok) {
         useWizardStore.setState({ isDirty: false })
+        toast.success('Changes saved')
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        toast.error(errData?.error ?? 'Failed to save changes.')
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[SaveChanges] Failed:', err)
+      toast.error(err?.message ?? 'Failed to save changes. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  // preview_url is set after deployment; fall back to config.previewUrl so the editor
-  // works for templates that haven't been deployed yet or whose preview_url is stale.
-  const previewUrl = selectedTemplate?.preview_url ?? selectedTemplate?.config?.previewUrl ?? ''
+  // ── Save (routes to draft or deployment based on mode) ───────────────────────
+
+  async function handleSave() {
+    if (isEditMode) {
+      await handleSaveChanges()
+    } else {
+      await handleSaveDraft()
+    }
+  }
+
+  // ── Navigate to deploy page ───────────────────────────────────────────────────
+
+  async function handleDeployClick() {
+    if (isEditMode && isDirty) {
+      await handleSaveChanges()
+    }
+    useDeployTransitionStore.getState().setTransitioning(true)
+    // Double rAF: first frame renders the overlay, second frame ensures it is
+    // composited/painted before we navigate and unmount the dashboard layout.
+    requestAnimationFrame(() => requestAnimationFrame(() => router.push('/deploy')))
+  }
 
   return (
     <div className="dark fixed inset-0 bg-background flex flex-col z-50">
@@ -209,101 +239,70 @@ export function EditorShell() {
       <div className="h-14 border-b border-white/10 flex items-center px-4 flex-shrink-0 gap-4">
         {/* Left — Back + context label */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-sm"
-          >
+          <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <path d="M9 11L5 7l4-4" />
             </svg>
             Back
-          </button>
-
+          </Button>
           <div className="w-px h-4 bg-white/10" />
-
-          <span className="text-xs text-muted-foreground truncate max-w-[140px]">
+          <span className="text-xs text-muted-foreground truncate max-w-36">
             {isEditMode ? 'Editing Live Site' : (selectedTemplate?.name ?? '')}
           </span>
         </div>
 
-        {/* Center — Project name + saved badge */}
+        {/* Center — Project name + save status badge */}
         <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
-          <span className="font-serif text-base font-light tracking-wide text-foreground truncate max-w-[260px]">
-            {isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}
-          </span>
-          {!isViewOnly && (draftId || isEditMode) && !isDirty && (
-            <span className="text-label uppercase tracking-label text-emerald-400/80 border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 rounded flex-shrink-0">
-              Saved
+          <Heading variant="modal-title" as="span" className="truncate max-w-64 !font-light">
+            <span title={isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}>
+              {isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}
             </span>
+          </Heading>
+          {!isViewOnly && (
+            saving
+              ? <span className="text-label uppercase tracking-label text-amber-400/80 border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 rounded flex-shrink-0 flex items-center gap-1.5">
+                  <Spinner size="xs" variant="accent" /> Saving…
+                </span>
+              : (draftId || isEditMode) && !isDirty
+                ? <span className="text-label uppercase tracking-label text-emerald-400/80 border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 rounded flex-shrink-0">Saved</span>
+                : null
           )}
         </div>
 
         {/* Right — Viewport switcher + action buttons */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Viewport switcher */}
-          <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
-            {VIEWPORT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setViewport(opt.value)}
-                title={opt.label}
-                className={cn(
-                  'w-8 h-7 rounded flex items-center justify-center transition-colors',
-                  viewport === opt.value
-                    ? 'bg-white/10 text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
+          <ButtonGroup
+            size="sm"
+            options={VIEWPORT_OPTIONS.map((o) => ({
+              value: o.value,
+              title: o.label,
+              label: (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d={opt.icon} />
+                  <path d={o.icon} />
                 </svg>
-              </button>
-            ))}
-          </div>
+              ),
+            }))}
+            value={viewport}
+            onChange={setViewport}
+            className="bg-white/10 rounded-lg p-0.5 gap-1"
+          />
 
           {!isViewOnly && (
             <>
               <div className="w-px h-4 bg-white/10" />
 
-              {/* Save Draft — works in both new-site and edit-site mode */}
-              <button
-                onClick={handleSaveDraft}
+              <Button
+                variant={isDirty ? 'amber' : 'secondary'}
+                size="sm"
+                onClick={handleSave}
                 disabled={saving || !isDirty}
-                className={cn(
-                  'flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-30 disabled:pointer-events-none',
-                  isDirty
-                    ? 'border border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/15'
-                    : 'border border-white/10 text-foreground hover:bg-white/5'
-                )}
               >
-                {saving ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-300 rounded-full animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  'Save Draft'
-                )}
-              </button>
+                Save
+              </Button>
 
-              {isEditMode ? (
-                /* Edit mode: Save Changes persists to the deployment record */
-                <button
-                  onClick={handleSaveChanges}
-                  disabled={saving}
-                  className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                >
-                  Save Changes
-                </button>
-              ) : (
-                /* New-site mode: Deploy (coming soon) */
-                <button
-                  onClick={() => setShowComingSoon(true)}
-                  className="px-3.5 py-1.5 rounded-lg text-sm bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors"
-                >
-                  Deploy
-                </button>
-              )}
+              <Button variant="primary" size="sm" onClick={handleDeployClick} disabled={saving}>
+                {isEditMode ? 'Publish' : 'Deploy'}
+              </Button>
             </>
           )}
         </div>
@@ -311,13 +310,13 @@ export function EditorShell() {
 
       {/* ── Main area ── */}
       <div className="flex-1 flex overflow-hidden">
-        <LeftPanel />
+        <LeftPanel iframeRef={iframeRef} />
 
         {panelMode === 'layers' ? (
           <>
             <PreviewCanvas templatePreviewUrl={previewUrl} iframeRef={iframeRef} />
             {!isViewOnly && (
-              <div className="w-[280px] border-l border-white/10 flex-shrink-0 bg-editor-surface overflow-hidden flex flex-col">
+              <div className="w-70 border-l border-white/10 flex-shrink-0 bg-editor-surface overflow-hidden flex flex-col">
                 <RightPanel iframeRef={iframeRef} />
               </div>
             )}
@@ -337,8 +336,8 @@ export function EditorShell() {
           isEditMode
             ? 'Any unsaved changes will be lost. Your last saved version will be preserved.'
             : draftId
-            ? 'Your unsaved changes will be discarded and the last saved version will be restored.'
-            : 'All your work — including the project name and content — will be lost. This cannot be undone.'
+              ? 'Your unsaved changes will be discarded and the last saved version will be restored.'
+              : 'All your work — including the project name and content — will be lost. This cannot be undone.'
         }
         confirmLabel={isEditMode ? 'Leave' : (draftId ? 'Discard Changes' : 'Discard & Leave')}
         cancelLabel="Stay"
@@ -346,33 +345,6 @@ export function EditorShell() {
         onConfirm={handleDiscard}
         onCancel={() => setShowBackModal(false)}
       />
-
-      {/* Deploy — coming soon overlay (new-site mode only) */}
-      {showComingSoon && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-editor-surface border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center space-y-5">
-            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="font-serif text-lg text-foreground mb-1.5">Deployment Coming Soon</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                The deployment feature is currently under development. Your draft is saved and will be ready to publish when this feature launches.
-              </p>
-            </div>
-            <button
-              onClick={() => setShowComingSoon(false)}
-              className="w-full px-4 py-2.5 rounded-lg text-sm font-medium border border-white/10 text-foreground hover:bg-white/5 transition-colors"
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

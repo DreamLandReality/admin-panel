@@ -2,21 +2,26 @@ import type { ManifestSection, SectionStyleControls } from '@/types'
 
 /**
  * Extract default styles for a specific field from manifest styleControls.
- * Returns a Record<cssProperty, defaultValue> e.g. { textAlign: "center", fontWeight: "400" }
+ * Returns a Record<cssProperty, defaultValue> — responsive controls return
+ * { desktop, tablet, mobile } objects instead of flat strings.
  */
 export function getFieldDefaults(
   styleControls: SectionStyleControls | undefined,
   field: string
-): Record<string, string> {
+): Record<string, any> {
   const controls = field === '__section'
     ? styleControls?.section
     : styleControls?.fields?.[field]
   if (!controls) return {}
 
-  const defaults: Record<string, string> = {}
+  const defaults: Record<string, any> = {}
   for (const ctrl of controls) {
     if (ctrl.default != null) {
-      defaults[ctrl.property] = ctrl.default
+      if (ctrl.responsive) {
+        defaults[ctrl.property] = { desktop: ctrl.default, tablet: ctrl.default, mobile: ctrl.default }
+      } else {
+        defaults[ctrl.property] = ctrl.default
+      }
       if (ctrl.linked) {
         defaults[ctrl.linked] = ctrl.default
       }
@@ -31,11 +36,11 @@ export function getFieldDefaults(
  */
 export function getSectionDefaults(
   section: ManifestSection
-): Record<string, Record<string, string>> {
+): Record<string, Record<string, any>> {
   const sc = section.styleControls
   if (!sc) return {}
 
-  const result: Record<string, Record<string, string>> = {}
+  const result: Record<string, Record<string, any>> = {}
 
   if (sc.fields) {
     for (const field of Object.keys(sc.fields)) {
@@ -61,9 +66,9 @@ export function getSectionDefaults(
 export function resolveAllSectionStyles(
   section: ManifestSection,
   sectionData: Record<string, any>
-): Record<string, Record<string, string>> {
+): Record<string, Record<string, any>> {
   const defaults = getSectionDefaults(section)
-  const resolved: Record<string, Record<string, string>> = {}
+  const resolved: Record<string, Record<string, any>> = {}
 
   // Deduplicate fields that have either defaults or overrides
   const seen: Record<string, true> = {}
@@ -80,7 +85,7 @@ export function resolveAllSectionStyles(
 
   for (const field of allFields) {
     const fieldDefaults = defaults[field] ?? {}
-    const fieldOverrides = sectionData[`${field}__style`] as Record<string, string> | undefined
+    const fieldOverrides = sectionData[`${field}__style`] as Record<string, any> | undefined
     resolved[field] = { ...fieldDefaults, ...fieldOverrides }
   }
 

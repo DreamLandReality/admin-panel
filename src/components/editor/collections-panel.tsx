@@ -87,7 +87,7 @@ export function CollectionsPanel() {
           </span>
           <button
             onClick={handleAddItem}
-            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10"
+            className="text-label text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10"
           >
             + Add
           </button>

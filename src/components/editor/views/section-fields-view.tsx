@@ -1,13 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
 import { postToIframe } from '@/lib/utils/iframe'
 import { slugify } from '@/lib/utils/slugify'
 import { StyleSection } from '../style-controls'
 import { SchemaFieldRenderer } from '../schema-field-renderer'
-import type { ManifestSection, StyleControl } from '@/types'
+import { PanelHeader } from '@/components/layout/PanelHeader'
+import type { ManifestSection } from '@/types'
+
+/** Deep-walk data and replace blob URL strings with their data URL equivalents */
+function resolveBlobUrls(data: any, map: Record<string, string>): any {
+  if (typeof data === 'string') return map[data] ?? data
+  if (Array.isArray(data)) return data.map((item) => resolveBlobUrls(item, map))
+  if (data !== null && typeof data === 'object') {
+    return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, resolveBlobUrls(v, map)]))
+  }
+  return data
+}
 
 // ─── SectionFieldsView ──────────────────────────────────────────────────────
 
@@ -26,6 +37,15 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
   const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
 
   const [expandedItem, setExpandedItem] = useState<number | null>(null)
+  const selectionItemIndex = useWizardStore((s) => s.selection.itemIndex)
+  const selectionField = useWizardStore((s) => s.selection.field)
+
+  // Auto-expand array item when clicked in the preview iframe
+  useEffect(() => {
+    if (selectionItemIndex !== null && selectionItemIndex !== undefined) {
+      setExpandedItem(selectionItemIndex)
+    }
+  }, [selectionItemIndex, selectionField])
 
   if (!sectionId) return null
 
@@ -37,7 +57,17 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
   // Helper to update a field and sync to iframe
   function handleFieldChange(field: string, value: any) {
     updateField(sectionId!, field, value)
-    postToIframe(iframeRef, { type: 'field-update', sectionId: sectionId!, field, value })
+    // Blob URLs are origin-bound and cause black images in cross-origin iframes.
+    // Resolve known blob→data URL mappings before sending. If any unresolved blob URLs
+    // remain (FileReader still pending), skip — sendFullUpdate handles it after conversion.
+    let resolved = value
+    const dataUrlMap = useWizardStore.getState().dataUrls
+    if (Object.keys(dataUrlMap).length > 0) {
+      resolved = resolveBlobUrls(value, dataUrlMap)
+    }
+    const json = typeof resolved === 'string' ? resolved : JSON.stringify(resolved)
+    if (json?.includes('blob:')) return
+    postToIframe(iframeRef, { type: 'field-update', sectionId: sectionId!, field, value: resolved })
   }
 
   function handleImageUpload(fieldPath: string, url: string, file?: File) {
@@ -80,43 +110,34 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
 
   // ── Style controls ──
   const styleDef = section?.styleControls
-  const fieldStyleEntries = Object.entries(styleDef?.fields ?? {})
   const sectionStyleControls = styleDef?.section ?? []
-  const hasAnyStyles = fieldStyleEntries.length > 0 || sectionStyleControls.length > 0
 
   function renderStyleControls() {
-    if (!hasAnyStyles) return null
+    if (sectionStyleControls.length === 0) return null
     return (
       <>
         <div className="border-t border-white/5 mt-4 pt-4">
-          <p className="text-label uppercase tracking-label text-muted-foreground mb-3">Styles</p>
+          <p className="text-label uppercase tracking-label text-muted-foreground mb-3">Layout</p>
         </div>
-        {fieldStyleEntries.map(([fieldName, controls]) => (
-          <StyleSection
-            key={fieldName}
-            label={fieldName}
-            sectionId={sectionId!}
-            styleKey={fieldName}
-            controls={controls as StyleControl[]}
-            iframeRef={iframeRef}
-          />
-        ))}
-        {sectionStyleControls.length > 0 && (
-          <StyleSection
-            label="Section Layout"
-            sectionId={sectionId!}
-            styleKey="__section"
-            controls={sectionStyleControls}
-            iframeRef={iframeRef}
-          />
-        )}
+        <StyleSection
+          label=""
+          sectionId={sectionId!}
+          styleKey="__section"
+          controls={sectionStyleControls}
+          iframeRef={iframeRef}
+        />
       </>
     )
   }
 
   // ── Detect object-with-items sections ──
+  // Only treat an array field as the section's top-level list when it is NOT a repeater widget.
+  // Repeater widget arrays are rendered inline by SchemaFieldRenderer — they don't need special promotion.
   const embeddedArrayKey = schema?.type === 'object' && schema?.properties
-    ? Object.keys(schema.properties).find((k: string) => schema.properties[k]?.type === 'array' && schema.properties[k]?.items?.type === 'object')
+    ? Object.keys(schema.properties).find((k: string) => {
+        const prop = schema.properties[k]
+        return prop?.type === 'array' && prop?.items?.type === 'object' && prop?.uiWidget !== 'repeater'
+      })
     : null
 
   // ── Array-type section (pure array or object-with-items) ──
@@ -136,9 +157,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
 
     return (
       <div>
-        <div className="sticky top-0 z-10 px-4 pt-4 pb-3 bg-editor-surface border-b border-white/5">
-          <p className="text-label-lg uppercase tracking-label text-muted-foreground">{section?.name ?? sectionId}</p>
-        </div>
+        <PanelHeader title={section?.name ?? sectionId ?? ''} sticky />
         <div className="px-2 pb-4 pt-3">
           {/* Render object-level fields above the items list */}
           {objectFieldEntries.length > 0 && (
@@ -149,6 +168,9 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
                 onChange={handleFieldChange}
                 onImageUpload={handleImageUpload}
                 collectionData={collectionData}
+                fieldStyleControls={styleDef?.fields ?? {}}
+                sectionId={sectionId!}
+                iframeRef={iframeRef}
               />
             </div>
           )}
@@ -225,9 +247,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
   // ── Object-type section ──
   return (
     <div>
-      <div className="sticky top-0 z-10 px-4 pt-4 pb-3 bg-editor-surface border-b border-white/5">
-        <p className="text-label-lg uppercase tracking-label text-muted-foreground">{section?.name ?? sectionId}</p>
-      </div>
+      <PanelHeader title={section?.name ?? sectionId ?? ''} sticky />
       <div className="px-4 space-y-3 pb-4 pt-3">
         <SchemaFieldRenderer
           properties={schema?.properties}
@@ -235,6 +255,9 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
           onChange={handleFieldChange}
           onImageUpload={handleImageUpload}
           collectionData={collectionData}
+          fieldStyleControls={styleDef?.fields ?? {}}
+          sectionId={sectionId!}
+          iframeRef={iframeRef}
         />
         {renderStyleControls()}
       </div>

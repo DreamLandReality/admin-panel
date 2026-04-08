@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration 001: Full Schema
--- Dream Reality Admin Portal
+-- Dream Land Reality Admin Portal
 --
 -- Covers: tables, indexes, functions, triggers, and RLS policies.
 -- Written as a clean fresh install — no ALTER migrations needed.
@@ -46,7 +46,7 @@ COMMENT ON COLUMN public.templates.config        IS 'Cached copy of template.con
 COMMENT ON COLUMN public.templates.default_data  IS 'Sample data/ folder contents from template repo, keyed by section ID';
 COMMENT ON COLUMN public.templates.preview_url   IS 'Live Cloudflare Pages URL for the preview iframe. NULL until deployed.';
 COMMENT ON COLUMN public.templates.preview_image IS 'Static preview/thumbnail image URL for template gallery display';
-COMMENT ON COLUMN public.templates.github_repo   IS 'Full owner/repo path (e.g., dreamreality-templates/starter-01)';
+COMMENT ON COLUMN public.templates.github_repo   IS 'Full owner/repo path (e.g., dreamlandreality-templates/starter-01)';
 COMMENT ON COLUMN public.templates.is_active     IS 'false hides from template picker without deletion';
 
 
@@ -76,6 +76,12 @@ CREATE TABLE IF NOT EXISTS public.deployments (
   deployed_at              TIMESTAMPTZ,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  github_repo_url          TEXT,
+  cloudflare_project_id    TEXT,
+  cloudflare_project_name  TEXT,
+  error_message            TEXT,
+  build_logs               TEXT,
+  stable_url               TEXT,
 
   CONSTRAINT chk_deployments_status
     CHECK (status IN ('draft', 'deploying', 'building', 'live', 'failed', 'archived'))
@@ -89,6 +95,12 @@ COMMENT ON COLUMN public.deployments.site_token              IS 'UUID for contac
 COMMENT ON COLUMN public.deployments.status_log              IS 'Append-only JSONB array of status transitions with timestamps';
 COMMENT ON COLUMN public.deployments.has_unpublished_changes IS 'true when site_data edited but not redeployed';
 COMMENT ON COLUMN public.deployments.custom_domain           IS 'Admin note only — no DNS automation';
+COMMENT ON COLUMN public.deployments.github_repo_url         IS 'Full HTTPS URL to the site GitHub repo';
+COMMENT ON COLUMN public.deployments.cloudflare_project_id   IS 'Cloudflare Pages project ID for re-deploy API calls';
+COMMENT ON COLUMN public.deployments.cloudflare_project_name IS 'Cloudflare Pages project name (used in CF API paths)';
+COMMENT ON COLUMN public.deployments.error_message           IS 'Human-readable failure reason from the last deploy attempt';
+COMMENT ON COLUMN public.deployments.build_logs              IS 'Raw Cloudflare build output for debugging failed deploys';
+COMMENT ON COLUMN public.deployments.stable_url              IS 'Permanent Cloudflare Pages URL (https://<project>.pages.dev). Preferred over live_url for Visit Site links.';
 
 
 -- ============================================================================
@@ -145,6 +157,7 @@ CREATE TABLE IF NOT EXISTS public.drafts (
   project_name      TEXT        NULL,
   site_slug         TEXT        NULL,
   last_active_page  TEXT        NULL DEFAULT 'home'::text,
+  screenshot_url    TEXT        NULL,
   created_at        TIMESTAMPTZ NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NULL DEFAULT now(),
 
@@ -177,6 +190,7 @@ COMMENT ON COLUMN public.drafts.section_data      IS 'All section field values k
 COMMENT ON COLUMN public.drafts.sections_registry IS 'Per-section enabled/disabled state';
 COMMENT ON COLUMN public.drafts.collection_data   IS 'CMS collection items keyed by collection ID';
 COMMENT ON COLUMN public.drafts.last_active_page  IS 'Active page in editor when draft was saved — restored on resume';
+COMMENT ON COLUMN public.drafts.screenshot_url    IS 'First available image URL extracted from section_data on editor save. Used as draft card thumbnail.';
 
 
 -- ============================================================================

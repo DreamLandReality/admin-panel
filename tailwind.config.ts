@@ -8,9 +8,12 @@ const config: Config = {
       colors: {
         background: 'hsl(var(--background))',
         surface: 'hsl(var(--surface))',
+        'surface-hover': 'hsl(var(--surface-hover))',
+        'surface-active': 'hsl(var(--surface-active))',
         foreground: 'hsl(var(--foreground))',
+        'foreground-inverse': 'hsl(var(--foreground-inverse))',
         'foreground-muted': 'hsl(var(--foreground-muted))',
-        'muted-foreground': 'hsl(var(--foreground-muted))',
+        'muted-foreground': 'hsl(var(--foreground-muted))', // legacy alias — prefer foreground-muted
         accent: {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
@@ -18,6 +21,8 @@ const config: Config = {
           muted: 'hsl(var(--accent-muted))',
         },
         border: 'hsl(var(--border))',
+        'border-hover': 'hsl(var(--border-hover))',
+        'border-subtle': 'hsl(var(--border-subtle))',
         sidebar: {
           bg: 'hsl(var(--sidebar-bg))',
           text: 'hsl(var(--sidebar-text))',
@@ -32,6 +37,7 @@ const config: Config = {
         success: { DEFAULT: 'hsl(var(--success))', bg: 'hsl(var(--success-bg))' },
         warning: { DEFAULT: 'hsl(var(--warning))', bg: 'hsl(var(--warning-bg))' },
         error: { DEFAULT: 'hsl(var(--error))', bg: 'hsl(var(--error-bg))' },
+        info: { DEFAULT: 'hsl(var(--info))', bg: 'hsl(var(--info-bg))' },
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'sans-serif'],
@@ -50,14 +56,35 @@ const config: Config = {
         micro: ['9px', { lineHeight: '1.4', fontWeight: '500' }],
         label: ['10px', { lineHeight: '1.4', fontWeight: '700' }],
         'label-lg': ['11px', { lineHeight: '1.4', fontWeight: '600' }],
+        'page-title': ['28px', { lineHeight: '1.2', fontWeight: '300' }],
+        'modal-title': ['18px', { lineHeight: '1.4', fontWeight: '300' }],
+        'logo': ['17px', { lineHeight: '1.2' }],
       },
       letterSpacing: {
         label: '0.2em',
+        'label-xs': '0.1em',
+        'label-sm': '0.15em',
+        'label-lg': '0.25em',
+        'loose': '0.3em',
+      },
+      transitionDuration: {
+        fast: '150ms',
+        default: '200ms',
+        medium: '300ms',
+        slow: '500ms',
+      },
+      transitionTimingFunction: {
+        sidebar: 'cubic-bezier(0.2,0.8,0.2,1)',
+        spring: 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
       boxShadow: {
         soft: 'var(--shadow-soft)',
         float: 'var(--shadow-float)',
         glow: 'var(--shadow-glow)',
+        modal: '0 32px 64px -16px rgba(0,0,0,0.4)',
+        'nav-indicator': 'var(--shadow-nav-indicator)',
+        'ping-ring': 'var(--shadow-ping-ring)',
+        'ping-dot': 'var(--shadow-ping-dot)',
       },
       animation: {
         'fade-in': 'fadeIn 0.6s ease-out forwards',
@@ -85,6 +112,19 @@ const config: Config = {
       },
       width: {
         '70': '17.5rem', // 280px
+        'sidebar-sm': '76px',    // collapsed sidebar
+        'indicator': '1.5px',   // active nav bar
+      },
+      aspectRatio: {
+        card: '4 / 5',
+        'card-wide': '4 / 3',
+      },
+      zIndex: {
+        modal: '100',
+        dropdown: '20',
+        sticky: '30',
+        overlay: '40',
+        toast: '110',
       }
     },
   },

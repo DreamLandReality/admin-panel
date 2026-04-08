@@ -10,19 +10,25 @@
 
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { env } from '@/lib/env'
 
 // R2 Configuration from environment (loaded from .env.local by Next.js)
 const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID
 const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
 const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME
 const R2_ASSETS_BUCKET_NAME = process.env.CLOUDFLARE_R2_ASSETS_BUCKET_NAME
-const R2_ACCOUNT_ID = process.env.CLOUDFLARE_R2_ACCOUNT_ID
+const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID
 const R2_PUBLIC_URL = process.env.NEXT_PUBLIC_R2_PUBLIC_URL
 
-// Whitelisted bucket names to prevent abuse
-const ALLOWED_BUCKETS = new Set(
-  [R2_BUCKET_NAME, R2_ASSETS_BUCKET_NAME].filter(Boolean) as string[]
-)
+// Warn at module load time if R2 is partially configured (credentials set but no public URL)
+if (R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && !R2_PUBLIC_URL) {
+  console.warn('[R2] R2 credentials are set but NEXT_PUBLIC_R2_PUBLIC_URL is missing. Uploads will succeed but public URL generation will fail.')
+}
+
+// Lazy getter: whitelisted bucket names (computed at call time, not module load)
+function getAllowedBuckets(): Set<string> {
+  return new Set([R2_BUCKET_NAME, R2_ASSETS_BUCKET_NAME].filter(Boolean) as string[])
+}
 
 /** Lazily created S3 client (shared across requests) */
 let _s3Client: S3Client | null = null
@@ -30,16 +36,13 @@ let _s3Client: S3Client | null = null
 function getS3Client(): S3Client {
   if (_s3Client) return _s3Client
 
-  if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_ACCOUNT_ID) {
-    throw new Error('Missing R2 credentials. Required: CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_ACCOUNT_ID')
-  }
-
+  // env.* getters throw with a clear message if any var is missing (fail-fast)
   _s3Client = new S3Client({
     region: 'auto',
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: `https://${env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
-      accessKeyId: R2_ACCESS_KEY_ID,
-      secretAccessKey: R2_SECRET_ACCESS_KEY
+      accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+      secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
     }
   })
 
@@ -50,7 +53,7 @@ function getS3Client(): S3Client {
  * Resolve a bucket name: validates against whitelist, defaults to screenshots bucket
  */
 function resolveBucket(bucket?: string): string {
-  if (bucket && ALLOWED_BUCKETS.has(bucket)) return bucket
+  if (bucket && getAllowedBuckets().has(bucket)) return bucket
   if (!R2_BUCKET_NAME) throw new Error('Missing CLOUDFLARE_R2_BUCKET_NAME')
   return R2_BUCKET_NAME
 }
@@ -121,10 +124,7 @@ export async function uploadToR2(
  * @returns Full public URL
  */
 export function getR2PublicUrl(objectKey: string): string {
-  if (!R2_PUBLIC_URL) {
-    throw new Error('Missing NEXT_PUBLIC_R2_PUBLIC_URL environment variable')
-  }
-  return `${R2_PUBLIC_URL}/${objectKey}`
+  return `${env.NEXT_PUBLIC_R2_PUBLIC_URL}/${objectKey}`
 }
 
 /**
@@ -157,4 +157,30 @@ export function isR2Configured(): boolean {
  */
 export function getAssetsBucketName(): string | undefined {
   return R2_ASSETS_BUCKET_NAME
+}
+
+/**
+ * Upload a file to the private screenshots bucket and return the object key.
+ *
+ * Unlike uploadToR2 (which returns a CDN public URL), this returns the raw
+ * object key so callers can generate signed URLs on demand via generateSignedUrl.
+ *
+ * @param objectKey   - e.g. "screenshots/deployments/my-site/preview.png"
+ * @param body        - File content as Buffer or Uint8Array
+ * @param contentType - MIME type (e.g. "image/png")
+ * @returns The object key (not a URL)
+ */
+export async function uploadToPrivateBucket(
+  objectKey: string,
+  body: Buffer | Uint8Array,
+  contentType: string
+): Promise<string> {
+  const s3Client = getS3Client()
+  await s3Client.send(new PutObjectCommand({
+    Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
+    Key: objectKey,
+    Body: body,
+    ContentType: contentType,
+  }))
+  return objectKey
 }

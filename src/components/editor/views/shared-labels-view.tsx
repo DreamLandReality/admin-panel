@@ -3,12 +3,16 @@
 import { useWizardStore } from '@/stores/wizard-store'
 import { postToIframe } from '@/lib/utils/iframe'
 import { SchemaFieldRenderer } from '../schema-field-renderer'
+import { PanelHeader } from '@/components/layout/PanelHeader'
 import type { ManifestSection } from '@/types'
 
 // ─── SharedLabelsView ─────────────────────────────────────────────────────────
 
 export function SharedLabelsView({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const { selection, sectionData, selectedTemplate, updateField } = useWizardStore()
+  const selection = useWizardStore((s) => s.selection)
+  const sectionData = useWizardStore((s) => s.sectionData)
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const updateField = useWizardStore((s) => s.updateField)
   const { sectionId } = selection
   if (!sectionId) return null
 
@@ -63,14 +67,11 @@ export function SharedLabelsView({ iframeRef }: { iframeRef: React.RefObject<HTM
 
   return (
     <div>
-      <div className="sticky top-0 z-10 px-4 pt-4 pb-3 bg-editor-surface border-b border-white/5">
-        <p className="text-label-lg uppercase tracking-label text-muted-foreground">
-          {headerTitle}
-        </p>
-        <p className="text-[10px] text-muted-foreground/60 mt-1">
-          Appears on all {dynPageDef?.name?.toLowerCase() ?? 'detail'} pages
-        </p>
-      </div>
+      <PanelHeader
+        title={headerTitle}
+        subtitle={`Appears on all ${dynPageDef?.name?.toLowerCase() ?? 'detail'} pages`}
+        sticky
+      />
       <div className="px-4 space-y-3 pb-4 pt-3">
         <SchemaFieldRenderer
           properties={labelsSchema.properties}

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { Template, ViewMode, Draft, PendingImage, Deployment } from '@/types'
+import type { Template, ViewMode, Draft, PendingImage, Deployment, FieldConstraints } from '@/types'
+import { buildFieldMaps } from '@/lib/utils/build-field-maps'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -9,6 +10,7 @@ interface Selection {
   field: string | null
   elementType: 'text' | 'image' | null
   content: string | null
+  itemIndex: number | null
 }
 
 interface WizardStore {
@@ -45,6 +47,14 @@ interface WizardStore {
   viewport: ViewMode
   activePage: string              // 'home' | '404' | '<property-slug>'
   selection: Selection
+
+  // Incremental update tracking: set by updateField so PreviewCanvas can send
+  // lightweight field-update messages instead of full data syncs.
+  lastFieldUpdate: { sectionId: string; field: string; value: any; ts: number } | null
+
+  // Field-level editability & constraints (derived from manifest on load)
+  editabilityMap: Record<string, Record<string, boolean>>
+  constraintsMap: Record<string, Record<string, FieldConstraints>>
 
   // Field/style mutations
   updateField: (sectionId: string, field: string, value: any) => void
@@ -95,11 +105,20 @@ const defaultSelection: Selection = {
   field: null,
   elementType: null,
   content: null,
+  itemIndex: null,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Immutable deep set via dot-notation parts — avoids structuredClone overhead */
+/**
+ * Immutable deep-set using pre-split dot-notation path segments.
+ * Spreads each level rather than cloning the full tree, keeping mutation O(depth).
+ *
+ * @example
+ *   // Called via updateField('hero', 'cta.text', 'Book Now')
+ *   setNested({ cta: { text: 'old' } }, ['cta', 'text'], 'Book Now')
+ *   // → { cta: { text: 'Book Now' } }
+ */
 function setNested(obj: Record<string, any>, parts: string[], value: any): Record<string, any> {
   if (parts.length === 1) return { ...obj, [parts[0]]: value }
   const key = parts[0]
@@ -113,13 +132,68 @@ function setNested(obj: Record<string, any>, parts: string[], value: any): Recor
   }
 }
 
-/** Revoke all blob URLs and pending image blob URLs */
+/**
+ * Seed any sections that exist in the manifest but are missing from a saved sectionsRegistry.
+ * This handles templates that gain new sections after a site was first saved.
+ */
+function seedSectionsRegistry(
+  registry: Record<string, { enabled: boolean }>,
+  manifest: any
+): Record<string, { enabled: boolean }> {
+  const result = { ...registry }
+  for (const section of manifest?.sections ?? []) {
+    if (!(section.id in result)) {
+      result[section.id] = { enabled: section.enabled !== false }
+    }
+  }
+  return result
+}
+
+/**
+ * Seed any undefined/null fields in sectionData with manifest section defaults.
+ * Also seeds entirely missing sections. Does NOT override empty strings or existing values.
+ */
+function seedManifestDefaults(
+  sectionData: Record<string, any>,
+  manifest: any
+): Record<string, any> {
+  const result = { ...sectionData }
+  for (const section of manifest?.sections ?? []) {
+    if (!section.data) continue
+    if (!(section.id in result)) {
+      // Entire section missing — use manifest defaults
+      result[section.id] = section.data
+    } else if (result[section.id] !== null && typeof result[section.id] === 'object' && !Array.isArray(result[section.id])) {
+      // Section is an object — fill in any undefined/null fields
+      const existing = result[section.id] as Record<string, any>
+      const defaults = section.data as Record<string, any>
+      const merged: Record<string, any> = { ...existing }
+      for (const [key, defaultVal] of Object.entries(defaults)) {
+        if (merged[key] === undefined || merged[key] === null) {
+          merged[key] = defaultVal
+        }
+      }
+      result[section.id] = merged
+    }
+  }
+  return result
+}
+
+/**
+ * Revoke all blob URLs and pending image blob URLs.
+ * Each revocation is wrapped in try/catch so a bad URL string
+ * never aborts cleanup of the remaining entries.
+ */
 function revokeAllBlobs(blobUrls: Record<string, string>, pendingImages: Record<string, PendingImage>) {
   for (const url of Object.values(blobUrls)) {
-    if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
+    if (typeof url === 'string' && url.startsWith('blob:')) {
+      try { URL.revokeObjectURL(url) } catch { /* non-fatal */ }
+    }
   }
   for (const pending of Object.values(pendingImages)) {
-    if (pending.blobUrl.startsWith('blob:')) URL.revokeObjectURL(pending.blobUrl)
+    if (pending.blobUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(pending.blobUrl) } catch { /* non-fatal */ }
+    }
   }
 }
 
@@ -129,6 +203,10 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   // Navigation
   currentStep: 1,
   setStep: (step) => set((s) => {
+    if (step < 1 || step > 4) {
+      console.warn(`[wizard] Invalid step: ${step}`)
+      return s
+    }
     if (step === 1) {
       return { currentStep: 1, selectedTemplate: null }
     }
@@ -165,6 +243,9 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   activePage: 'home',
   selection: defaultSelection,
   isViewOnly: false,
+  lastFieldUpdate: null,
+  editabilityMap: {},
+  constraintsMap: {},
   setViewOnly: (v) => set({ isViewOnly: v }),
   panelMode: 'layers',
   setPanelMode: (mode) => set({ panelMode: mode }),
@@ -172,13 +253,61 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   setSelectedCollectionItem: (sel) => set({ selectedCollectionItem: sel }),
 
   // Field update — supports deep dot notation (e.g. "cta.text", "structuredData.address.street")
+  // Enforces constraints (maxLength, min/max) before writing to sectionData.
   updateField: (sectionId, field, value) =>
     set((s) => {
+      // Apply constraints if present
+      const constraints = s.constraintsMap[sectionId]?.[field]
+      let constrained = value
+      if (constraints) {
+        if (typeof constrained === 'string' && constraints.maxLength != null) {
+          constrained = constrained.slice(0, constraints.maxLength)
+        }
+        if (typeof constrained === 'number') {
+          if (constraints.min != null) constrained = Math.max(constraints.min, constrained)
+          if (constraints.max != null) constrained = Math.min(constraints.max, constrained)
+        }
+      }
+
+      // Cleanup: if the new value is an array that's shorter than before, revoke blob URLs for removed items
+      const oldValue = s.sectionData[sectionId]?.[field]
+      if (Array.isArray(oldValue) && Array.isArray(constrained) && constrained.length < oldValue.length) {
+        const removedItems = oldValue.slice(constrained.length)
+        removedItems.forEach((item, index) => {
+          const actualIndex = constrained.length + index
+          const itemKey = `${sectionId}.${field}.${actualIndex}`
+          
+          // Revoke blob URL if it exists
+          const blobUrl = s.blobUrls[itemKey]
+          if (blobUrl && blobUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(blobUrl)
+          }
+          
+          // Clean up dataUrls map
+          if (blobUrl && s.dataUrls[blobUrl]) {
+            const newDataUrls = { ...s.dataUrls }
+            delete newDataUrls[blobUrl]
+            s.dataUrls = newDataUrls
+          }
+          
+          // Clean up blobUrls map
+          if (blobUrl) {
+            const newBlobUrls = { ...s.blobUrls }
+            delete newBlobUrls[itemKey]
+            s.blobUrls = newBlobUrls
+          }
+        })
+      }
+
       const next = { ...s.sectionData }
       if (!next[sectionId]) next[sectionId] = {}
       const parts = field.split('.')
-      next[sectionId] = setNested(next[sectionId] ?? {}, parts, value)
-      return { sectionData: next, isDirty: true }
+      next[sectionId] = setNested(next[sectionId] ?? {}, parts, constrained)
+      return {
+        sectionData: next,
+        isDirty: true,
+        lastFieldUpdate: { sectionId, field, value: constrained, ts: Date.now() },
+      }
     }),
 
   // Style update — writes to fieldName__style key
@@ -440,18 +569,22 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       }
     }
 
+    const { editabilityMap, constraintsMap } = buildFieldMaps(template.manifest)
     set({
       sectionData,
       sectionsRegistry: sections,
       collectionData,
+      editabilityMap,
+      constraintsMap,
       currentStep: 3,
       isDirty: false,
     })
   },
 
   // Load from a deployed site and open for re-editing.
-  // Uses deployment.template_manifest (frozen snapshot at creation time) instead of
-  // the live templates.manifest — the template may have changed since the site was deployed.
+  // Prefers the live template manifest so schema changes (removed fields, new widgets)
+  // propagate to existing sites automatically. Falls back to frozen snapshot only if
+  // the template no longer exists.
   loadFromDeployment: (deployment, template) => {
     revokeAllBlobs(get().blobUrls, get().pendingImages)
 
@@ -459,26 +592,29 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     const { _sections, ...sectionData } = (deployment.site_data ?? {}) as Record<string, any>
     const sectionsRegistry = (_sections ?? {}) as Record<string, { enabled: boolean }>
 
-    // Use the frozen manifest snapshot stored on the deployment row
-    const frozenManifest = deployment.template_manifest ?? template.manifest
+    // Use live template manifest so the editor always reflects the current schema.
+    // Fall back to frozen snapshot only when the template has been deleted.
+    const manifest = template.manifest ?? deployment.template_manifest
 
-    // Rebuild collectionData from the frozen manifest (not the live template)
+    // Rebuild collectionData from the manifest
     const collectionData: Record<string, any[]> = {}
-    for (const col of frozenManifest?.collections ?? []) {
+    for (const col of manifest?.collections ?? []) {
       collectionData[col.id] = col.data ?? []
     }
 
+    const { editabilityMap, constraintsMap } = buildFieldMaps(manifest)
     set({
       deploymentId: deployment.id,
       draftId: null,
       projectName: deployment.project_name,
-      // Override manifest with the frozen snapshot so the editor reflects the deployed structure
-      selectedTemplate: { ...template, manifest: frozenManifest },
+      selectedTemplate: { ...template, manifest },
       currentStep: 3,
       rawText: '',
-      sectionData,
-      sectionsRegistry,
+      sectionData: seedManifestDefaults(sectionData, manifest),
+      sectionsRegistry: seedSectionsRegistry(sectionsRegistry, manifest),
       collectionData,
+      editabilityMap,
+      constraintsMap,
       activePage: 'home',
       blobUrls: {},
       dataUrls: {},
@@ -492,23 +628,24 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     })
   },
 
-  // Load from a saved draft and resume editing.
-  // For edit-site drafts (draft.deployment_id set), restores deploymentId in the store
-  // so the editor opens in edit mode with the correct save targets.
+  // Load from a saved draft and resume editing (new-commission drafts only).
   loadFromDraft: (draft, template) => {
     // Revoke existing blob URLs
     revokeAllBlobs(get().blobUrls, get().pendingImages)
 
+    const { editabilityMap, constraintsMap } = buildFieldMaps(template.manifest)
     set({
       draftId: draft.id,
-      deploymentId: draft.deployment_id ?? null,
+      deploymentId: null,
       projectName: draft.project_name ?? '',
       selectedTemplate: template,
       currentStep: (draft.current_step as 1 | 2 | 3 | 4) ?? 3,
       rawText: draft.raw_text ?? '',
-      sectionData: draft.section_data ?? {},
-      sectionsRegistry: draft.sections_registry ?? {},
+      sectionData: seedManifestDefaults(draft.section_data ?? {}, template.manifest),
+      sectionsRegistry: seedSectionsRegistry(draft.sections_registry ?? {}, template.manifest),
       collectionData: draft.collection_data ?? {},
+      editabilityMap,
+      constraintsMap,
       activePage: draft.last_active_page ?? 'home',
       blobUrls: {},
       dataUrls: {},
@@ -535,10 +672,13 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       sectionData: {},
       sectionsRegistry: {},
       collectionData: {},
+      editabilityMap: {},
+      constraintsMap: {},
       blobUrls: {},
       dataUrls: {},
       pendingImages: {},
       isDirty: false,
+      lastFieldUpdate: null,
       viewport: 'desktop',
       activePage: 'home',
       selection: defaultSelection,

@@ -43,7 +43,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json()
+  let body: any
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
   const {
     deployment_id,
     project_name,
@@ -56,6 +61,7 @@ export async function POST(request: NextRequest) {
     collection_data,
     site_slug,
     last_active_page,
+    screenshot_url,
   } = body
 
   if (!template_slug) {
@@ -77,6 +83,7 @@ export async function POST(request: NextRequest) {
       collection_data: collection_data ?? {},
       site_slug: site_slug ?? null,
       last_active_page: last_active_page ?? 'home',
+      screenshot_url: screenshot_url ?? null,
       updated_at: new Date().toISOString(),
     }
 
@@ -137,6 +144,7 @@ export async function POST(request: NextRequest) {
         collection_data: collection_data ?? {},
         site_slug: site_slug ?? null,
         last_active_page: last_active_page ?? 'home',
+        screenshot_url: screenshot_url ?? null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,project_name' }

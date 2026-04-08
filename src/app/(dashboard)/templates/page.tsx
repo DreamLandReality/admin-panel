@@ -1,15 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { TemplateCard } from '@/components/wizard/step-template-picker'
+import { TemplateCard } from '@/components/shared/template-card'
 import { EditorShell } from '@/components/editor/editor-shell'
+import { EmptyState } from '@/components/dashboard/empty-state'
+import { Skeleton } from '@/components/ui'
 import { useWizardStore } from '@/stores/wizard-store'
 import type { Template } from '@/types'
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
-  const { isViewOnly, selectedTemplate, reset, selectTemplate, loadManualDefaults, setViewOnly } = useWizardStore()
+  const isViewOnly = useWizardStore((s) => s.isViewOnly)
+  const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
+  const reset = useWizardStore((s) => s.reset)
+  const selectTemplate = useWizardStore((s) => s.selectTemplate)
+  const loadManualDefaults = useWizardStore((s) => s.loadManualDefaults)
+  const setViewOnly = useWizardStore((s) => s.setViewOnly)
 
   useEffect(() => {
     fetch('/api/templates')
@@ -33,18 +40,26 @@ export default function TemplatesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <span className="w-5 h-5 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
+      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="space-y-3">
+            <Skeleton className="aspect-card w-full rounded-xl" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        ))}
       </div>
     )
   }
 
   if (templates.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-in">
-        <p className="font-serif text-2xl text-foreground mb-2">No templates available</p>
-        <p className="text-sm text-foreground-muted">Check back soon.</p>
-      </div>
+      <EmptyState
+        heading="No templates available"
+        description="Check back soon — templates will appear here when they are published."
+        ctaLabel=""
+        ctaHref=""
+      />
     )
   }
 
@@ -54,11 +69,12 @@ export default function TemplatesPage() {
         ? 'grid gap-5 max-w-xs'
         : 'grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4'
     }>
-      {templates.map((template) => (
+      {templates.map((template, idx) => (
         <TemplateCard
           key={template.id}
           template={template}
           onSelect={handleView}
+          index={idx}
         />
       ))}
     </div>
