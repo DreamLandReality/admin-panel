@@ -52,7 +52,7 @@ export default function EditDeploymentLoading() {
             {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded-md">
                 <Skeleton className="h-4 w-4 rounded-full shrink-0" />
-                <Skeleton className={`h-3 rounded flex-1`} style={{ width: `${55 + (i * 13) % 30}%` }} />
+                <Skeleton className="h-3 rounded flex-1" />
                 <Skeleton className="h-4 w-7 rounded-full shrink-0" />
               </div>
             ))}
