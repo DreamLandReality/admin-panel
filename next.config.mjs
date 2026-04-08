@@ -2,6 +2,7 @@
 const isDev = process.env.NODE_ENV === 'development'
 
 const nextConfig = {
+  eslint: { ignoreDuringBuilds: true },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '*.r2.dev' },

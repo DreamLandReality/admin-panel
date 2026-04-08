@@ -596,7 +596,7 @@ export default function DeployPage() {
                   </button>
                 )}
                 <button
-                  onClick={() => { setIsEditNav(true); finalDeploymentId && router.push(`/deployments/${finalDeploymentId}`) }}
+                  onClick={() => { setIsEditNav(true); if (finalDeploymentId) router.push(`/deployments/${finalDeploymentId}`) }}
                   disabled={isEditNav}
                   className="flex-1 h-9 rounded-lg border border-white/10 text-foreground/80 text-sm hover:bg-white/5 hover:text-foreground active:scale-[0.97] active:opacity-70 transition-all duration-100 disabled:opacity-40"
                 >
