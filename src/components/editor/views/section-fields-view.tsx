@@ -121,7 +121,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
         </div>
         <StyleSection
           label=""
-          sectionId={sectionId!}
+          sectionId={sectionId ?? ''}
           styleKey="__section"
           controls={sectionStyleControls}
           iframeRef={iframeRef}
@@ -169,7 +169,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
                 onImageUpload={handleImageUpload}
                 collectionData={collectionData}
                 fieldStyleControls={styleDef?.fields ?? {}}
-                sectionId={sectionId!}
+                sectionId={sectionId ?? ''}
                 iframeRef={iframeRef}
               />
             </div>
@@ -256,7 +256,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
           onImageUpload={handleImageUpload}
           collectionData={collectionData}
           fieldStyleControls={styleDef?.fields ?? {}}
-          sectionId={sectionId!}
+          sectionId={sectionId ?? ''}
           iframeRef={iframeRef}
         />
         {renderStyleControls()}

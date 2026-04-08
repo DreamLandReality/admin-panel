@@ -78,7 +78,7 @@ export function DeploymentCard({
           {/* View Live button */}
           {(deployment.stable_url ?? deployment.live_url) && (
             <a
-              href={(deployment.stable_url ?? deployment.live_url)!}
+              href={(deployment.stable_url ?? deployment.live_url) as string}
               target="_blank"
               rel="noopener noreferrer"
               title="View live site"
