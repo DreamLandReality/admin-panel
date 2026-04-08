@@ -98,7 +98,7 @@ const ICONS: IconEntry[] = [
   { name: 'library',        label: 'Study Room',        category: 'Study',     paths: ["m16 6 4 14","M12 6v14","M8 8v12","M4 4v16"] },
 ]
 
-export const ICON_CATEGORIES = [...new Set(ICONS.map(i => i.category))]
+export const ICON_CATEGORIES = Array.from(new Set(ICONS.map(i => i.category)))
 
 export function searchIcons(query: string, category?: string): IconEntry[] {
   let results = ICONS
