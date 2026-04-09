@@ -34,6 +34,7 @@ export function DeploymentCard({
   const hasUnpublished = deployment.status === 'live' && deployment.has_unpublished_changes
 
   return (
+    <>
     <AnimatedCard index={index}>
       <div className="group relative rounded-xl bg-card overflow-hidden cursor-pointer">
         {/* Full-card link */}
@@ -162,5 +163,6 @@ export function DeploymentCard({
         }
       }}
     />
+    </>
   )
 }
