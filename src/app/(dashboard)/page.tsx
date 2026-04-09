@@ -53,6 +53,7 @@ export default async function DashboardHomePage() {
         'id, project_name, slug, status, screenshot_url, template_id, has_unpublished_changes, site_data, live_url, stable_url, updated_at, templates(slug)'
       )
       .eq('deployed_by', user.id)
+      .neq('status', 'archived')
       .order('updated_at', { ascending: false }),
     // Fetch new-commission drafts (no deployment linked yet)
     supabase

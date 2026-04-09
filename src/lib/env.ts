@@ -86,7 +86,7 @@ export const env = {
     return requireValue('QSTASH_NEXT_SIGNING_KEY', process.env.QSTASH_NEXT_SIGNING_KEY)
   },
 
-  /** True when voice agent env vars are present (no throw). */
+  /** True when all voice agent env vars are present (no throw). */
   get isVoiceAgentConfigured(): boolean {
     return !!(
       process.env.ELEVENLABS_API_KEY &&
@@ -94,6 +94,7 @@ export const env = {
       process.env.QSTASH_TOKEN
     )
   },
+
 }
 
 /**

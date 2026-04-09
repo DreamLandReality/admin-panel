@@ -107,5 +107,21 @@ export async function PATCH(
     return NextResponse.json({ status: 'ok' })
   }
 
+  if (action === 'complete_dev_call') {
+    const { error } = await supabase
+      .from('form_submissions')
+      .update({
+        call_status: 'completed',
+        call_completed_at: new Date().toISOString(),
+        call_signed_url: null,
+      })
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ status: 'completed' })
+  }
+
   return NextResponse.json({ error: 'Invalid action. Use "retry", "cancel", or "clear_signed_url".' }, { status: 400 })
 }

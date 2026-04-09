@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Template, ViewMode, Draft, PendingImage, Deployment, FieldConstraints } from '@/types'
+import type { Template, ViewMode, Draft, PendingImage, Deployment, FieldConstraints, DeploymentStatus } from '@/types'
 import { buildFieldMaps } from '@/lib/utils/build-field-maps'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ interface WizardStore {
   // Deployment edit tracking
   deploymentId: string | null
   setDeploymentId: (id: string | null) => void
+  deploymentStatus: DeploymentStatus | null
 
   // Step 2 — Data input
   rawText: string
@@ -226,6 +227,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   // Deployment edit tracking
   deploymentId: null,
   setDeploymentId: (id) => set({ deploymentId: id }),
+  deploymentStatus: null,
 
   // Step 2
   rawText: '',
@@ -605,6 +607,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     const { editabilityMap, constraintsMap } = buildFieldMaps(manifest)
     set({
       deploymentId: deployment.id,
+      deploymentStatus: deployment.status,
       draftId: null,
       projectName: deployment.project_name,
       selectedTemplate: { ...template, manifest },
@@ -668,6 +671,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       projectName: '',
       draftId: null,
       deploymentId: null,
+      deploymentStatus: null,
       rawText: '',
       sectionData: {},
       sectionsRegistry: {},

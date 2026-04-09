@@ -3,11 +3,13 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import type { DeploymentCardData } from '@/types'
 import { ROUTES } from '@/lib/constants'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { AnimatedCard } from '@/components/ui/animated-card'
+import { ConfirmModal } from '@/components/shared/confirm-modal'
 import {
   getThumbnailSrc,
   getImageFilterClass,
@@ -21,7 +23,10 @@ export function DeploymentCard({
   deployment: DeploymentCardData
   index: number
 }) {
+  const router = useRouter()
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const thumbnailSrc = getThumbnailSrc(deployment)
   const relativeTime = formatRelativeTime(deployment.updated_at)
   const imageFilter = getImageFilterClass(deployment.status)
@@ -91,6 +96,27 @@ export function DeploymentCard({
             </a>
           )}
 
+          {/* Delete button — only for live deployments */}
+          {deployment.status === 'live' && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setShowDeleteConfirm(true)
+              }}
+              title="Delete site"
+              aria-label="Delete site"
+              className="absolute top-2.5 right-10 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80 hover:text-white backdrop-blur-sm"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4h6v2" />
+              </svg>
+            </button>
+          )}
+
           {/* Unpublished changes strip — bottom of image */}
           {hasUnpublished && (
             <div className="absolute bottom-0 inset-x-0 z-10 flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 backdrop-blur-sm border-t border-amber-500/20 pointer-events-none">
@@ -116,5 +142,25 @@ export function DeploymentCard({
         </div>
       </div>
     </AnimatedCard>
+
+    <ConfirmModal
+      open={showDeleteConfirm}
+      title="Delete site"
+      description={`"${deployment.project_name}" will be taken offline and removed from your dashboard. This cannot be undone.`}
+      confirmLabel={deleting ? 'Deleting…' : 'Delete Site'}
+      cancelLabel="Keep Site"
+      variant="danger"
+      onCancel={() => setShowDeleteConfirm(false)}
+      onConfirm={async () => {
+        setDeleting(true)
+        try {
+          await fetch(`/api/deployments/${deployment.id}`, { method: 'DELETE' })
+          setShowDeleteConfirm(false)
+          router.refresh()
+        } finally {
+          setDeleting(false)
+        }
+      }}
+    />
   )
 }

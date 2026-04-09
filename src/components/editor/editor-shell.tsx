@@ -34,6 +34,7 @@ export function EditorShell() {
   const projectName = useWizardStore((s) => s.projectName)
   const draftId = useWizardStore((s) => s.draftId)
   const deploymentId = useWizardStore((s) => s.deploymentId)
+  const deploymentStatus = useWizardStore((s) => s.deploymentStatus)
   const isViewOnly = useWizardStore((s) => s.isViewOnly)
 
   // Actions — stable references, never cause re-renders
@@ -46,6 +47,8 @@ export function EditorShell() {
 
   const [saving, setSaving] = useState(false)
   const [showBackModal, setShowBackModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -291,6 +294,17 @@ export function EditorShell() {
             <>
               <div className="w-px h-4 bg-white/10" />
 
+              {isEditMode && deploymentStatus === 'live' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  Delete Site
+                </Button>
+              )}
+
               <Button
                 variant={isDirty ? 'amber' : 'secondary'}
                 size="sm"
@@ -344,6 +358,27 @@ export function EditorShell() {
         variant="danger"
         onConfirm={handleDiscard}
         onCancel={() => setShowBackModal(false)}
+      />
+
+      {/* Delete site confirmation modal */}
+      <ConfirmModal
+        open={showDeleteModal}
+        title="Delete site"
+        description={`"${projectName}" will be taken offline and removed from your dashboard. This cannot be undone.`}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete Site'}
+        cancelLabel="Keep Site"
+        variant="danger"
+        onCancel={() => setShowDeleteModal(false)}
+        onConfirm={async () => {
+          setDeleting(true)
+          try {
+            await fetch(`/api/deployments/${deploymentId}`, { method: 'DELETE' })
+            useWizardStore.getState().reset()
+            router.push('/')
+          } finally {
+            setDeleting(false)
+          }
+        }}
       />
     </div>
   )

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { deleteProject } from '@/lib/deploy/cloudflare'
 
 type RouteContext = { params: { id: string } }
 
@@ -132,4 +133,62 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   }
 
   return NextResponse.json({ data })
+}
+
+/**
+ * DELETE /api/deployments/[id]
+ * Deletes a live deployment:
+ *   - Removes the Cloudflare Pages project (site goes offline)
+ *   - Soft-deletes the DB row: status = 'archived', URLs cleared
+ * Only works when status === 'live'.
+ */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: RouteContext
+) {
+  const supabase = createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: deployment, error: fetchError } = await supabase
+    .from('deployments')
+    .select('id, status, cloudflare_project_name')
+    .eq('id', params.id)
+    .eq('deployed_by', user.id)
+    .single()
+
+  if (fetchError || !deployment) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  if (deployment.status !== 'live') {
+    return NextResponse.json(
+      { error: 'Only live deployments can be deleted' },
+      { status: 400 }
+    )
+  }
+
+  // 1. Delete Cloudflare Pages project (hard delete — site goes offline)
+  if (deployment.cloudflare_project_name) {
+    await deleteProject(deployment.cloudflare_project_name)
+  }
+
+  // 2. Soft delete — archive row, clear live URLs
+  const { error: updateError } = await supabase
+    .from('deployments')
+    .update({
+      status: 'archived' as const,
+      stable_url: null,
+      live_url: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.id)
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ status: 'archived' })
 }

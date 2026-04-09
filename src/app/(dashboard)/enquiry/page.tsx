@@ -39,6 +39,7 @@ type Enquiry = {
   call_duration_seconds: number | null
   call_attempts: number
   call_signed_url: string | null
+  call_property_context: string | null
 }
 
 type StatusFilter = 'all' | 'unread' | 'price-unlock' | 'contact'
@@ -272,12 +273,20 @@ function EnquiryPanel({
     ;(async () => {
       try {
         const propertyName = enquiry.deployments?.project_name ?? enquiry.deployment_slug
+        const ctx = enquiry.call_property_context ?? ''
         const conversation = await Conversation.startSession({
           signedUrl: enquiry.call_signed_url as string,
           dynamicVariables: {
             caller_name: enquiry.name,
             property_name: propertyName,
           },
+          overrides: ctx ? {
+            agent: {
+              prompt: {
+                prompt: `The caller's name is ${enquiry.name}. They enquired about "${propertyName}".\n\nProperty details:\n${ctx}\n\nGreet them by name and reference this property. Only mention details that are explicitly listed in the property details above — do not assume or invent any information not provided.`
+              }
+            }
+          } : undefined,
           onConnect: () => { if (!cancelled) setCallLive(true) },
           onDisconnect: () => {
             if (cancelled) return
@@ -285,7 +294,7 @@ function EnquiryPanel({
             fetch(`/api/voice-call/${enquiry.id}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'clear_signed_url' }),
+              body: JSON.stringify({ action: 'complete_dev_call' }),
             })
             setTimeout(onReload, 2000)
           },
@@ -305,7 +314,7 @@ function EnquiryPanel({
       conversationRef.current?.endSession()
       conversationRef.current = null
     }
-  }, [enquiry?.id, enquiry?.call_signed_url, enquiry?.call_status, onReload])
+  }, [enquiry?.id, enquiry?.call_signed_url, enquiry?.call_status, enquiry?.call_property_context, onReload])
   const isOpen = !!enquiry
   const isPriceUnlock = enquiry?.form_type === 'price-unlock'
   const isUnread = enquiry ? !enquiry.is_read : false

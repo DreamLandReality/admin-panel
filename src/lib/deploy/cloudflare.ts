@@ -154,6 +154,11 @@ export async function triggerDeployment(projectName: string): Promise<{ deployme
   return { deploymentId: result?.id }
 }
 
+/** Delete a Cloudflare Pages project. Site goes offline immediately. */
+export async function deleteProject(projectName: string): Promise<void> {
+  await cfFetch(`/pages/projects/${projectName}`, { method: 'DELETE' })
+}
+
 export interface DeploymentStage {
   name: string
   status: 'idle' | 'active' | 'canceled' | 'success' | 'failure'

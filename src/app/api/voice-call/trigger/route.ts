@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   // 3. Check submission hasn't been cancelled
   const { data: submission } = await supabase
     .from('form_submissions')
-    .select('call_status, call_attempts')
+    .select('call_status, call_attempts, call_property_context')
     .eq('id', submission_id)
     .single()
 
@@ -56,7 +56,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'skipped', reason: 'invalid_phone' })
   }
 
-  // 5. Call ElevenLabs outbound call API
+  // 5. Read property context built server-side by the submit-form edge function
+  const propertyContext = submission.call_property_context ?? ''
+
+  const contextBlock = propertyContext
+    ? `\n\nProperty details:\n${propertyContext}`
+    : ''
+
+  // 6. Call ElevenLabs outbound call API
   const response = await fetch(
     'https://api.elevenlabs.io/v1/convai/twilio/outbound-call',
     {
@@ -72,7 +79,7 @@ export async function POST(req: NextRequest) {
         conversation_config_override: {
           agent: {
             prompt: {
-              prompt: `The caller's name is ${name}. They enquired about "${property_name}" on website ${deployment_slug}. Greet them by name and reference this property.`,
+              prompt: `The caller's name is ${name}. They enquired about "${property_name}".${contextBlock}\n\nGreet them by name and reference this property. Only mention details that are explicitly listed in the property details above — do not assume or invent any information not provided.`,
             },
           },
         },
@@ -95,7 +102,7 @@ export async function POST(req: NextRequest) {
 
   const result = await response.json()
 
-  // 6. Update submission
+  // 7. Update submission
   await supabase
     .from('form_submissions')
     .update({
