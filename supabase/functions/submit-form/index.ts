@@ -99,6 +99,8 @@ serve(async (req) => {
     // Combine firstName + lastName if name not provided (ContactForm sends split names)
     const name = (rawName || `${firstName || ""} ${lastName || ""}`.trim()).trim()
 
+    console.log("[submit-form] Received:", { siteToken: !!siteToken, name, email: email?.trim(), phone: phone?.trim() || null })
+
     // Validate required fields
     if (!siteToken || !name || !email?.trim()) {
       return new Response(
@@ -134,6 +136,8 @@ serve(async (req) => {
       .eq("site_token", siteToken)
       .single()
 
+    console.log("[submit-form] Deployment lookup:", { found: !!deployment, error: dError?.message })
+
     if (dError || !deployment) {
       return new Response(
         JSON.stringify({ error: "Site not found" }),
@@ -150,7 +154,9 @@ serve(async (req) => {
       .eq("deployment_id", deployment.id)
       .gte("created_at", oneHourAgo)
 
+    console.log("[submit-form] Rate limit check:", { ip, recentCount, deployment_id: deployment.id })
     if ((recentCount ?? 0) >= 5) {
+      console.log("[submit-form] Rate limited")
       return new Response(
         JSON.stringify({ error: "Too many submissions. Please try again later." }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" }, status: 429 }
@@ -174,6 +180,8 @@ serve(async (req) => {
       .select("id")
       .single()
 
+    console.log("[submit-form] Insert result:", { id: insertedRow?.id, error: insertError?.message })
+
     if (insertError || !insertedRow) {
       console.error("[submit-form] Insert error:", insertError)
       return new Response(
@@ -195,14 +203,20 @@ serve(async (req) => {
     const qstashToken = Deno.env.get("QSTASH_TOKEN")
     const adminUrl = Deno.env.get("ADMIN_PANEL_URL")
 
+    console.log("[submit-form] Voice config:", { voiceEnabled, devMode, hasElevenlabsKey: !!elevenlabsKey, hasAgentId: !!agentId, hasPhone: !!phone?.trim() })
+
     if (voiceEnabled && phone?.trim()) {
+      console.log("[submit-form] Voice block entered")
       if (devMode && elevenlabsKey && agentId) {
+        console.log("[submit-form] Dev mode: calling ElevenLabs for signed URL")
         // ── DEV MODE: get signed URL so browser can connect immediately ──────
         try {
           const res = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
             method: "GET",
             headers: { "xi-api-key": elevenlabsKey },
           })
+
+          console.log("[submit-form] ElevenLabs response status:", res.status)
 
           if (!res.ok) {
             const errText = await res.text()
@@ -212,16 +226,18 @@ serve(async (req) => {
           if (res.ok) {
             const json = await res.json()
             const signed_url = json.signed_url ?? json.signedUrl ?? json.url
-            await supabase
+            console.log("[submit-form] ElevenLabs signed_url:", signed_url ? "delayed" : "missing")
+            const { error: updateError } = await supabase
               .from("form_submissions")
               .update({
                 call_status: "calling",
                 call_signed_url: signed_url,
-                call_property_context: propertyContext,
                 call_scheduled_at: new Date().toISOString(),
                 call_attempts: 1,
+                call_property_context: propertyContext,
               })
               .eq("id", insertedRow.id)
+            console.log("[submit-form] DB update result:", updateError ? `ERROR: ${updateError.message} (${updateError.code})` : "success")
           }
         } catch (err) {
           console.error("[submit-form] Dev voice call failed:", err)
@@ -254,9 +270,9 @@ serve(async (req) => {
             .from("form_submissions")
             .update({
               call_status: "scheduled",
-              call_property_context: propertyContext,
               call_scheduled_at: new Date().toISOString(),
               call_scheduled_for: new Date(Date.now() + delaySeconds * 1000).toISOString(),
+              call_property_context: propertyContext,
             })
             .eq("id", insertedRow.id)
         } catch (err) {

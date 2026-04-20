@@ -83,6 +83,10 @@ export async function POST(req: NextRequest) {
             },
           },
         },
+        dynamic_variables: {
+          caller_name: name,
+          property_name: property_name,
+        },
       }),
     }
   )
