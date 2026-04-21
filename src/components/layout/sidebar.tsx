@@ -16,6 +16,7 @@ import {
     Sun,
     Moon,
     LogOut,
+    Archive,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTheme } from 'next-themes'
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
     { icon: LayoutDashboard, label: 'Sites', href: '/', match: 'exact', group: 'workspace' },
     { icon: PlusCircle, label: 'New Commission', href: '/deployments/new', match: 'exact', group: 'workspace' },
     { icon: Layers, label: 'Templates', href: '/templates', match: 'startsWith', group: 'workspace' },
+    { icon: Archive, label: 'Archived', href: '/archived', match: 'startsWith', group: 'workspace' },
     { icon: MessageSquare, label: 'Enquiry', href: '/enquiry', match: 'startsWith', group: 'system' },
 ]
 

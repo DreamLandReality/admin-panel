@@ -147,7 +147,7 @@ export function DeploymentCard({
     <ConfirmModal
       open={showDeleteConfirm}
       title="Delete site"
-      description={`"${deployment.project_name}" will be taken offline and removed from your dashboard. This cannot be undone.`}
+      description={`"${deployment.project_name}" will be taken offline and moved to Archived. You can restore it at any time.`}
       confirmLabel={deleting ? 'Deleting…' : 'Delete Site'}
       cancelLabel="Keep Site"
       variant="danger"
