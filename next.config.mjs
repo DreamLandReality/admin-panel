@@ -27,6 +27,7 @@ const nextConfig = {
         ? "frame-src https://*.pages.dev http://localhost:* http://127.0.0.1:*"
         : "frame-src https://*.pages.dev",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://api.elevenlabs.io wss://api.elevenlabs.io",
+      "worker-src 'self' blob:",
     ].join('; ')
 
     return [

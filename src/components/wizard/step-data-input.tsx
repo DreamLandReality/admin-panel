@@ -11,26 +11,59 @@ import { WarningCallout } from '@/components/feedback/WarningCallout'
 
 const MAX_CHARS = 50_000
 const WARN_CHARS = 45_000
-const MAX_PDF_BYTES = 52_428_800 // 50 MB — validated client-side only, never sent to server
+const MAX_PDF_BYTES = 30 * 1024 * 1024 // 30 MB — client-side extraction, no server size limit
 
-/** Extract text from a PDF file entirely in the browser using pdfjs-dist. */
-async function extractPdfText(file: File): Promise<{ text: string; pageCount: number }> {
-  const pdfjs = await import('pdfjs-dist')
-  // Use CDN worker matching the installed version — avoids bundling the heavy worker script
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+/** Extract text from a PDF entirely in the browser — no file sent to server. */
+async function extractPdfText(file: File): Promise<{ text: string }> {
+  console.log('[pdf] starting extraction', { name: file.name, size: file.size, type: file.type })
 
-  const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
-  const pageCount = pdf.numPages
-
-  const pages: string[] = []
-  for (let i = 1; i <= pageCount; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    pages.push(content.items.map((item: any) => ('str' in item ? item.str : '')).join(' '))
+  let pdfjs: any
+  try {
+    pdfjs = await import('pdfjs-dist')
+    console.log('[pdf] pdfjs-dist imported, version:', pdfjs.version)
+  } catch (err) {
+    console.error('[pdf] failed to import pdfjs-dist:', err)
+    throw err
   }
 
-  return { text: pages.join('\n'), pageCount }
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+  console.log('[pdf] workerSrc set to /pdf.worker.min.mjs')
+
+  let data: Uint8Array
+  try {
+    data = new Uint8Array(await file.arrayBuffer())
+    console.log('[pdf] file read into buffer, bytes:', data.byteLength)
+  } catch (err) {
+    console.error('[pdf] failed to read file into ArrayBuffer:', err)
+    throw err
+  }
+
+  let pdf: any
+  try {
+    pdf = await pdfjs.getDocument({ data }).promise
+    console.log('[pdf] document loaded, pages:', pdf.numPages)
+  } catch (err) {
+    console.error('[pdf] getDocument failed:', err)
+    throw err
+  }
+
+  const pages: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    try {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const pageText = content.items.map((item: any) => ('str' in item ? item.str : '')).join(' ')
+      console.log(`[pdf] page ${i}/${pdf.numPages} extracted, chars: ${pageText.length}`)
+      pages.push(pageText)
+    } catch (err) {
+      console.error(`[pdf] failed on page ${i}:`, err)
+      throw err
+    }
+  }
+
+  const text = pages.join('\n')
+  console.log('[pdf] extraction complete, total chars:', text.length)
+  return { text }
 }
 
 type PdfStatus = 'idle' | 'extracting' | 'done' | 'error'
@@ -256,19 +289,19 @@ export function StepDataInput({
 
     if (file.size > MAX_PDF_BYTES) {
       setPdfStatus('error')
-      setPdfError('File is too large. Maximum size is 50 MB.')
+      setPdfError('File is too large. Maximum size is 4 MB.')
       return
     }
 
     setPdfStatus('extracting')
 
     try {
-      const { text, pageCount: _ } = await extractPdfText(file)
+      const { text } = await extractPdfText(file)
       const trimmed = text.trim()
 
       if (!trimmed) {
         setPdfStatus('error')
-        setPdfError('No text could be extracted from this PDF. It may be a scanned document — try pasting the text manually.')
+        setPdfError('No text could be extracted. This PDF may be a scanned image — try pasting the text manually.')
         return
       }
 
@@ -276,7 +309,8 @@ export function StepDataInput({
       setRawText(truncated ? trimmed.slice(0, MAX_CHARS) : trimmed)
       if (truncated) setPdfTruncated(true)
       setPdfStatus('done')
-    } catch {
+    } catch (err: any) {
+      console.error('[pdf] extraction failed:', err)
       setPdfStatus('error')
       setPdfError('Could not read this PDF. The file may be corrupted or password-protected.')
     }

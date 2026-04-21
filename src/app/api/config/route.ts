@@ -29,9 +29,14 @@ export async function GET() {
     )
   }
 
+  const anthropicKey = process.env.ANTHROPIC_API_KEY ?? ''
+  const googleKey = process.env.GOOGLE_API_KEY ?? ''
+  const isRealAnthropicKey = anthropicKey.startsWith('sk-ant-') && anthropicKey.length > 50
+  const isRealGoogleKey = googleKey.startsWith('AIza') && googleKey.length > 30
+
   return NextResponse.json({
-    isAiConfigured: !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_PARSE_MODEL),
-    isGeminiConfigured: !!(process.env.GOOGLE_API_KEY && process.env.GEMINI_PARSE_MODEL),
+    isAiConfigured: !!(isRealAnthropicKey && process.env.ANTHROPIC_PARSE_MODEL),
+    isGeminiConfigured: !!(isRealGoogleKey && process.env.GEMINI_PARSE_MODEL),
     isDeployConfigured: !!(
       process.env.GITHUB_TOKEN &&
       process.env.GITHUB_ORG &&

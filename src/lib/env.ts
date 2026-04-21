@@ -54,13 +54,15 @@ export const env = {
     )
   },
 
-  /** True when both Claude API key and parse model are configured. */
+  /** True when both Claude API key and parse model are configured with real values. */
   get isAiConfigured(): boolean {
-    return !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_PARSE_MODEL)
+    const key = process.env.ANTHROPIC_API_KEY ?? ''
+    return !!(key.startsWith('sk-ant-') && key.length > 50 && process.env.ANTHROPIC_PARSE_MODEL)
   },
-  /** True when both Gemini API key and parse model are configured. */
+  /** True when both Gemini API key and parse model are configured with real values. */
   get isGeminiConfigured(): boolean {
-    return !!(process.env.GOOGLE_API_KEY && process.env.GEMINI_PARSE_MODEL)
+    const key = process.env.GOOGLE_API_KEY ?? ''
+    return !!(key.startsWith('AIza') && key.length > 30 && process.env.GEMINI_PARSE_MODEL)
   },
   get ANTHROPIC_API_KEY() {
     return requireValue('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY)
