@@ -149,7 +149,6 @@ export function StepDataInput({
 
     const controller = new AbortController()
     abortControllerRef.current = controller
-    const timeoutId = setTimeout(() => controller.abort(), 30_000)
 
     try {
       const res = await fetch('/api/parse', {
@@ -158,22 +157,49 @@ export function StepDataInput({
         body: JSON.stringify({ templateId: selectedTemplate.id, rawText, provider }),
         signal: controller.signal,
       })
-      clearTimeout(timeoutId)
-      const json = await res.json()
-      if (!res.ok) {
+
+      if (!res.ok || !res.body) {
+        const json = await res.json().catch(() => ({}))
         setError(json.error ?? 'Something went wrong. Please try again.')
         return
       }
-      if (json.parseQuality === 'empty') {
-        setError('No data could be extracted. The text may be too short or unrelated to a property listing — try adding more detail.')
-        return
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let event: any
+          try { event = JSON.parse(line.slice(6)) } catch { continue }
+
+          if (event.type === 'ping') continue
+
+          if (event.type === 'error') {
+            setError(event.message ?? 'Something went wrong. Please try again.')
+            return
+          }
+
+          if (event.type === 'result') {
+            if (event.parseQuality === 'empty') {
+              setError('No data could be extracted. The text may be too short or unrelated to a property listing — try adding more detail.')
+              return
+            }
+            loadParseResult(event.sectionData, event._sections)
+            return
+          }
+        }
       }
-      loadParseResult(json.sectionData, json._sections)
     } catch (e: any) {
-      clearTimeout(timeoutId)
-      if (e.name === 'AbortError') {
-        setError('This is taking longer than expected. Please try again.')
-      } else {
+      if (e.name !== 'AbortError') {
         setError('Network error. Please check your connection and try again.')
       }
     } finally {

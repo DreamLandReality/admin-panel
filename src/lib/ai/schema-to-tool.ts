@@ -27,23 +27,27 @@ export function buildToolSchema(sections: ManifestSection[]) {
     const isArray = section.dataType === 'array' || (schema?.type === 'array' && schema.items)
 
     if (isArray && schema.items) {
-      // Array section — wrap as array of items
+      const filteredItemProps = filterAiIgnore(schema.items.properties ?? {})
+      const filteredItemRequired = (schema.items.required as string[] | undefined)
+        ?.filter((k: string) => k in filteredItemProps)
       properties[section.id] = {
         type: 'array',
         description: section.description,
         items: {
           type: 'object',
-          properties: filterAiIgnore(schema.items.properties ?? {}),
-          ...(schema.items.required && { required: schema.items.required }),
+          properties: filteredItemProps,
+          ...(filteredItemRequired?.length && { required: filteredItemRequired }),
         },
       }
     } else {
-      // Object section — extract nested properties
+      const filteredProps = filterAiIgnore(schema?.properties ?? {})
+      const filteredRequired = (schema?.required as string[] | undefined)
+        ?.filter((k: string) => k in filteredProps)
       properties[section.id] = {
         type: 'object',
         description: section.description,
-        properties: filterAiIgnore(schema?.properties ?? {}),
-        ...(schema?.required && { required: schema.required }),
+        properties: filteredProps,
+        ...(filteredRequired?.length && { required: filteredRequired }),
       }
     }
 

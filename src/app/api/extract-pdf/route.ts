@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PDFParse } from 'pdf-parse'
+import { extractText, getDocumentProxy } from 'unpdf'
 import { createClient } from '@/lib/supabase/server'
 import { createRateLimiter } from '@/lib/rate-limit'
 
@@ -39,16 +39,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'too_large' }, { status: 400 })
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
+  const uint8 = new Uint8Array(await file.arrayBuffer())
 
   let pageCount: number
   let rawText: string
   try {
-    const parser = new PDFParse({ data: buffer })
-    const result = await parser.getText()
-    rawText = result.text?.trim() ?? ''
-    pageCount = result.total
-    await parser.destroy()
+    const pdf = await getDocumentProxy(uint8)
+    pageCount = pdf.numPages
+    const { text } = await extractText(pdf, { mergePages: true })
+    rawText = (Array.isArray(text) ? text.join('\n') : text).trim()
   } catch {
     return NextResponse.json({ error: 'parse_failed' }, { status: 422 })
   }

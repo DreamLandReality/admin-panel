@@ -7,6 +7,11 @@ import { createRateLimiter } from '@/lib/rate-limit'
 import type { ManifestSection } from '@/types'
 
 const MAX_TEXT_LENGTH = 50_000
+const TIMEOUT_MS = 3 * 60 * 1000
+const HEARTBEAT_MS = 5_000
+
+const CLAUDE_MODEL = process.env.ANTHROPIC_PARSE_MODEL ?? 'claude-sonnet-4-5-20250929'
+const GEMINI_MODEL = process.env.GEMINI_PARSE_MODEL ?? 'gemini-2.5-flash'
 
 /** Recursively merge source into target. Source wins for primitives; objects merge recursively; arrays replace. */
 function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
@@ -35,11 +40,9 @@ function toGeminiSchema(schema: any): any {
 
   if (schema.type) {
     const t = (schema.type as string).toUpperCase()
-    // Gemini only accepts these specific types
     if (['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'].includes(t)) {
       result.type = t
     } else {
-      // Fallback custom types like 'COLOR', 'IMAGE', etc. to 'STRING'
       result.type = 'STRING'
     }
   }
@@ -53,7 +56,10 @@ function toGeminiSchema(schema: any): any {
     }
   }
   if (schema.items) result.items = toGeminiSchema(schema.items)
-  if (schema.required) result.required = schema.required
+  if (schema.required && result.properties) {
+    const filtered = (schema.required as string[]).filter((k: string) => k in result.properties)
+    if (filtered.length) result.required = filtered
+  }
   return result
 }
 
@@ -61,19 +67,23 @@ function toGeminiSchema(schema: any): any {
 async function runClaude(
   systemPrompt: string,
   userPrompt: string,
-  tool: ReturnType<typeof buildToolSchema>
+  tool: ReturnType<typeof buildToolSchema>,
+  signal: AbortSignal
 ): Promise<Record<string, any>> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not configured')
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 8192,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-    tools: [tool],
-    tool_choice: { type: 'tool', name: 'save_property_data' },
-  })
+  const response = await client.messages.create(
+    {
+      model: CLAUDE_MODEL,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+      tools: [tool],
+      tool_choice: { type: 'tool', name: 'save_property_data' },
+    },
+    { signal }
+  )
 
   const toolUse = response.content.find((c) => c.type === 'tool_use')
   if (!toolUse || toolUse.type !== 'tool_use') throw new Error('Claude did not return structured data')
@@ -84,7 +94,8 @@ async function runClaude(
 async function runGemini(
   systemPrompt: string,
   userPrompt: string,
-  tool: ReturnType<typeof buildToolSchema>
+  tool: ReturnType<typeof buildToolSchema>,
+  signal: AbortSignal
 ): Promise<Record<string, any>> {
   if (!process.env.GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY is not configured')
 
@@ -107,8 +118,8 @@ async function runGemini(
   }
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GOOGLE_API_KEY}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${process.env.GOOGLE_API_KEY}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }
   )
 
   if (!res.ok) {
@@ -123,6 +134,10 @@ async function runGemini(
 }
 
 const parseLimiter = createRateLimiter({ windowMs: 60_000, max: 10 })
+
+function sseEvent(data: object): Uint8Array {
+  return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`)
+}
 
 export async function POST(req: Request) {
   const supabase = createClient()
@@ -166,42 +181,71 @@ export async function POST(req: Request) {
   const { systemPrompt, userPrompt } = buildParsePrompt(sections, rawText.trim())
   const tool = buildToolSchema(sections)
 
-  let aiData: Record<string, any>
-  try {
-    aiData = provider === 'gemini'
-      ? await runGemini(systemPrompt, userPrompt, tool)
-      : await runClaude(systemPrompt, userPrompt, tool)
-  } catch (err: any) {
-    console.error(`[parse] ${provider} error:`, err)
-    return NextResponse.json({ error: err.message || 'AI service error' }, { status: 502 })
-  }
+  const stream = new ReadableStream({
+    async start(controller) {
+      const aiController = new AbortController()
 
-  // Deep merge: AI data wins over template defaults for non-null values
-  const merged: Record<string, any> = { ...(template.default_data ?? {}) }
-  for (const [sectionId, sectionData] of Object.entries(aiData)) {
-    if (sectionData == null) continue
-    if (Array.isArray(sectionData)) {
-      merged[sectionId] = sectionData
-    } else if (typeof sectionData === 'object') {
-      merged[sectionId] = deepMerge(merged[sectionId] ?? {}, sectionData)
-    }
-  }
+      const heartbeat = setInterval(() => {
+        try { controller.enqueue(sseEvent({ type: 'ping' })) } catch { /* stream closed */ }
+      }, HEARTBEAT_MS)
 
-  // Build sections registry — all sections enabled by default
-  const _sections: Record<string, { enabled: boolean }> = {}
-  sections.forEach((s) => { _sections[s.id] = { enabled: true } })
+      const timeout = setTimeout(() => {
+        aiController.abort()
+        try {
+          controller.enqueue(sseEvent({ type: 'error', message: 'Request timed out after 3 minutes. Please try again.' }))
+          controller.close()
+        } catch { /* already closed */ }
+      }, TIMEOUT_MS)
 
-  // Assess parse quality: count sections where AI returned at least one non-null value
-  let populatedSections = 0
-  for (const val of Object.values(aiData)) {
-    if (val == null) continue
-    if (Array.isArray(val) && val.length > 0) { populatedSections++; continue }
-    if (typeof val === 'object' && Object.values(val as Record<string, any>).some((f) => f != null)) {
-      populatedSections++
-    }
-  }
-  const parseQuality: 'ok' | 'low' | 'empty' =
-    populatedSections === 0 ? 'empty' : populatedSections < 3 ? 'low' : 'ok'
+      try {
+        const aiData = provider === 'gemini'
+          ? await runGemini(systemPrompt, userPrompt, tool, aiController.signal)
+          : await runClaude(systemPrompt, userPrompt, tool, aiController.signal)
 
-  return NextResponse.json({ sectionData: merged, _sections, provider, parseQuality })
+        // Deep merge: AI data wins over template defaults for non-null values
+        const merged: Record<string, any> = { ...(template.default_data ?? {}) }
+        for (const [sectionId, sectionData] of Object.entries(aiData)) {
+          if (sectionData == null) continue
+          if (Array.isArray(sectionData)) {
+            merged[sectionId] = sectionData
+          } else if (typeof sectionData === 'object') {
+            merged[sectionId] = deepMerge(merged[sectionId] ?? {}, sectionData)
+          }
+        }
+
+        const _sections: Record<string, { enabled: boolean }> = {}
+        sections.forEach((s) => { _sections[s.id] = { enabled: true } })
+
+        let populatedSections = 0
+        for (const val of Object.values(aiData)) {
+          if (val == null) continue
+          if (Array.isArray(val) && val.length > 0) { populatedSections++; continue }
+          if (typeof val === 'object' && Object.values(val as Record<string, any>).some((f) => f != null)) {
+            populatedSections++
+          }
+        }
+        const parseQuality: 'ok' | 'low' | 'empty' =
+          populatedSections === 0 ? 'empty' : populatedSections < 3 ? 'low' : 'ok'
+
+        controller.enqueue(sseEvent({ type: 'result', sectionData: merged, _sections, provider, parseQuality }))
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error(`[parse] ${provider} error:`, err)
+          try { controller.enqueue(sseEvent({ type: 'error', message: err.message || 'AI service error' })) } catch { /* closed */ }
+        }
+      } finally {
+        clearInterval(heartbeat)
+        clearTimeout(timeout)
+        try { controller.close() } catch { /* already closed */ }
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  })
 }
