@@ -107,9 +107,6 @@ export function findAiSkipSections(sections: Array<{ id: string; schema?: any }>
       skip.add(section.id)
     }
   }
-  // Also skip well-known non-content sections (NOT seo — it has extractable fields)
-  skip.add(SECTION_IDS.NAVIGATION)
-  skip.add(SECTION_IDS.FOOTER)
   return skip
 }
 

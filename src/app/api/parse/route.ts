@@ -68,7 +68,7 @@ async function runClaude(
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const response = await client.messages.create({
     model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
     tools: [tool],
@@ -191,5 +191,17 @@ export async function POST(req: Request) {
   const _sections: Record<string, { enabled: boolean }> = {}
   sections.forEach((s) => { _sections[s.id] = { enabled: true } })
 
-  return NextResponse.json({ sectionData: merged, _sections, provider })
+  // Assess parse quality: count sections where AI returned at least one non-null value
+  let populatedSections = 0
+  for (const val of Object.values(aiData)) {
+    if (val == null) continue
+    if (Array.isArray(val) && val.length > 0) { populatedSections++; continue }
+    if (typeof val === 'object' && Object.values(val as Record<string, any>).some((f) => f != null)) {
+      populatedSections++
+    }
+  }
+  const parseQuality: 'ok' | 'low' | 'empty' =
+    populatedSections === 0 ? 'empty' : populatedSections < 3 ? 'low' : 'ok'
+
+  return NextResponse.json({ sectionData: merged, _sections, provider, parseQuality })
 }

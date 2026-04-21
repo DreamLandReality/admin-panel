@@ -1,11 +1,16 @@
 import type { ManifestSection } from '@/types'
 import { findAiSkipSections } from '@/lib/constants'
 
-// Remove fields marked aiIgnore: true from a properties map
+// Remove fields marked aiIgnore: true from a properties map — recurses into nested objects
 function filterAiIgnore(props: Record<string, any>): Record<string, any> {
   const filtered: Record<string, any> = {}
   for (const [key, value] of Object.entries(props)) {
-    if (!value?.aiIgnore) filtered[key] = value
+    if (value?.aiIgnore) continue
+    if (value?.properties) {
+      filtered[key] = { ...value, properties: filterAiIgnore(value.properties) }
+    } else {
+      filtered[key] = value
+    }
   }
   return filtered
 }

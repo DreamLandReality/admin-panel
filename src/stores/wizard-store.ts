@@ -510,16 +510,18 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
 
   // Load AI parse result and advance to editor
   loadParseResult: (data, sections) => {
-    // Initialize collection data from manifest if available
     const template = get().selectedTemplate
     const collectionData: Record<string, any[]> = {}
     for (const col of template?.manifest?.collections ?? []) {
       collectionData[col.id] = col.data ?? []
     }
+    const { editabilityMap, constraintsMap } = buildFieldMaps(template?.manifest)
     set({
       sectionData: data,
       sectionsRegistry: sections,
       collectionData,
+      editabilityMap,
+      constraintsMap,
       currentStep: 3,
       isDirty: false,
     })

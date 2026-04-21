@@ -11,6 +11,9 @@ import { WarningCallout } from '@/components/feedback/WarningCallout'
 
 const MAX_CHARS = 50_000
 const WARN_CHARS = 45_000
+const MAX_PDF_BYTES = 52_428_800 // 50 MB
+
+type PdfStatus = 'idle' | 'extracting' | 'done' | 'error'
 
 const BackArrow = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -78,10 +81,20 @@ export function StepDataInput({
   const [error, setError] = useState<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
+  const [pdfStatus, setPdfStatus] = useState<PdfStatus>('idle')
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const [pdfTruncated, setPdfTruncated] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   // Scroll to top of main content when sub-step changes
   useEffect(() => {
     document.getElementById('main-content')?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [stage])
+
+  // Abort any in-flight parse request on unmount
+  useEffect(() => {
+    return () => { abortControllerRef.current?.abort() }
+  }, [])
 
   const charCount = rawText.length
   const isOverLimit = charCount > MAX_CHARS
@@ -151,6 +164,10 @@ export function StepDataInput({
         setError(json.error ?? 'Something went wrong. Please try again.')
         return
       }
+      if (json.parseQuality === 'empty') {
+        setError('No data could be extracted. The text may be too short or unrelated to a property listing — try adding more detail.')
+        return
+      }
       loadParseResult(json.sectionData, json._sections)
     } catch (e: any) {
       clearTimeout(timeoutId)
@@ -173,6 +190,58 @@ export function StepDataInput({
   function handleFillManually() {
     if (!selectedTemplate) return
     loadManualDefaults(selectedTemplate)
+  }
+
+  async function handlePdfUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Reset so the same file can be re-selected after an error
+    e.target.value = ''
+
+    setPdfError(null)
+    setPdfTruncated(false)
+
+    if (file.type !== 'application/pdf') {
+      setPdfStatus('error')
+      setPdfError('Only PDF files are supported. Please select a .pdf file.')
+      return
+    }
+
+    if (file.size > MAX_PDF_BYTES) {
+      setPdfStatus('error')
+      setPdfError('File is too large. Maximum size is 50 MB.')
+      return
+    }
+
+    setPdfStatus('extracting')
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await fetch('/api/extract-pdf', { method: 'POST', body: formData })
+      const json = await res.json()
+
+      if (!res.ok) {
+        const messages: Record<string, string> = {
+          no_text: 'No text could be extracted from this PDF. It may be a scanned document — try pasting the text manually.',
+          too_large: 'File is too large. Maximum size is 50 MB.',
+          invalid_type: 'Only PDF files are supported.',
+          parse_failed: 'Could not read this PDF. The file may be corrupted.',
+          rate_limited: 'Too many requests. Please wait a moment and try again.',
+        }
+        setPdfStatus('error')
+        setPdfError(messages[json.error] ?? 'Something went wrong. Please try again.')
+        return
+      }
+
+      setRawText(json.text)
+      if (json.truncated) setPdfTruncated(true)
+      setPdfStatus('done')
+    } catch {
+      setPdfStatus('error')
+      setPdfError('Network error. Please check your connection and try again.')
+    }
   }
 
   const sections = selectedTemplate?.manifest?.sections ?? []
@@ -231,10 +300,49 @@ export function StepDataInput({
         </p>
       </div>
 
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-muted-foreground">Or upload a brochure</p>
+        <div className="relative">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            className="absolute inset-0 opacity-0 w-full cursor-pointer"
+            onChange={handlePdfUpload}
+            disabled={isLoading || pdfStatus === 'extracting'}
+            aria-label="Upload PDF brochure"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isLoading || pdfStatus === 'extracting'}
+            className="gap-1.5 pointer-events-none"
+          >
+            {pdfStatus === 'extracting' ? (
+              <>
+                <Spinner size="xs" variant="muted" />
+                Extracting…
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6.5 8.5V2M3.5 5l3-3 3 3M2 10.5h9" />
+                </svg>
+                Upload PDF
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
       <TextArea
         variant="underline"
         value={rawText}
-        onChange={(e) => setRawText(e.target.value)}
+        onChange={(e) => {
+          setRawText(e.target.value)
+          if (pdfTruncated) setPdfTruncated(false)
+          if (pdfError) setPdfError(null)
+        }}
         placeholder="Paste your property text here…&#10;&#10;e.g. 3 BHK luxury apartment in Bandra West, Mumbai. 1850 sq ft. Sea views. ₹4.5 crore. Amenities: rooftop pool, gym, concierge…"
         disabled={isLoading}
         error={isOverLimit}
@@ -242,6 +350,19 @@ export function StepDataInput({
         charCount={{ current: charCount, max: MAX_CHARS, warn: WARN_CHARS }}
         className="min-h-[280px] focus:border-foreground disabled:opacity-50 mb-1"
       />
+
+      {pdfError && (
+        <WarningCallout variant="error" title="Upload error" description={pdfError} className="mb-4" />
+      )}
+
+      {pdfTruncated && (
+        <WarningCallout
+          variant="warning"
+          title="Text trimmed"
+          description={`Text exceeds the ${MAX_CHARS.toLocaleString()} character limit and has been trimmed.`}
+          className="mb-4"
+        />
+      )}
 
       {error && (
         <WarningCallout variant="error" title="Error" description={error} className="mb-6" />
