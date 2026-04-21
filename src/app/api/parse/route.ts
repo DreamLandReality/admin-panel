@@ -11,7 +11,7 @@ const TIMEOUT_MS = 3 * 60 * 1000
 const HEARTBEAT_MS = 5_000
 
 const CLAUDE_MODEL = process.env.ANTHROPIC_PARSE_MODEL ?? 'claude-sonnet-4-5-20250929'
-const GEMINI_MODEL = process.env.GEMINI_PARSE_MODEL ?? 'gemini-2.5-flash'
+const GEMINI_MODEL = process.env.GEMINI_PARSE_MODEL ?? 'gemini-3-flash'
 
 /** Recursively merge source into target. Source wins for primitives; objects merge recursively; arrays replace. */
 function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {

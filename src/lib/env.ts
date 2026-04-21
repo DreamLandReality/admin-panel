@@ -54,9 +54,13 @@ export const env = {
     )
   },
 
-  /** True when ANTHROPIC_API_KEY is present (no throw). Used to show/hide AI parse features. */
+  /** True when both Claude API key and parse model are configured. */
   get isAiConfigured(): boolean {
-    return !!process.env.ANTHROPIC_API_KEY
+    return !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_PARSE_MODEL)
+  },
+  /** True when both Gemini API key and parse model are configured. */
+  get isGeminiConfigured(): boolean {
+    return !!(process.env.GOOGLE_API_KEY && process.env.GEMINI_PARSE_MODEL)
   },
   get ANTHROPIC_API_KEY() {
     return requireValue('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY)

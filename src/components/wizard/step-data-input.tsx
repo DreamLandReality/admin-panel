@@ -11,7 +11,27 @@ import { WarningCallout } from '@/components/feedback/WarningCallout'
 
 const MAX_CHARS = 50_000
 const WARN_CHARS = 45_000
-const MAX_PDF_BYTES = 52_428_800 // 50 MB
+const MAX_PDF_BYTES = 52_428_800 // 50 MB — validated client-side only, never sent to server
+
+/** Extract text from a PDF file entirely in the browser using pdfjs-dist. */
+async function extractPdfText(file: File): Promise<{ text: string; pageCount: number }> {
+  const pdfjs = await import('pdfjs-dist')
+  // Use CDN worker matching the installed version — avoids bundling the heavy worker script
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+  const pageCount = pdf.numPages
+
+  const pages: string[] = []
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    pages.push(content.items.map((item: any) => ('str' in item ? item.str : '')).join(' '))
+  }
+
+  return { text: pages.join('\n'), pageCount }
+}
 
 type PdfStatus = 'idle' | 'extracting' | 'done' | 'error'
 
@@ -241,32 +261,24 @@ export function StepDataInput({
     }
 
     setPdfStatus('extracting')
-    const formData = new FormData()
-    formData.append('file', file)
 
     try {
-      const res = await fetch('/api/extract-pdf', { method: 'POST', body: formData })
-      const json = await res.json()
+      const { text, pageCount: _ } = await extractPdfText(file)
+      const trimmed = text.trim()
 
-      if (!res.ok) {
-        const messages: Record<string, string> = {
-          no_text: 'No text could be extracted from this PDF. It may be a scanned document — try pasting the text manually.',
-          too_large: 'File is too large. Maximum size is 50 MB.',
-          invalid_type: 'Only PDF files are supported.',
-          parse_failed: 'Could not read this PDF. The file may be corrupted.',
-          rate_limited: 'Too many requests. Please wait a moment and try again.',
-        }
+      if (!trimmed) {
         setPdfStatus('error')
-        setPdfError(messages[json.error] ?? 'Something went wrong. Please try again.')
+        setPdfError('No text could be extracted from this PDF. It may be a scanned document — try pasting the text manually.')
         return
       }
 
-      setRawText(json.text)
-      if (json.truncated) setPdfTruncated(true)
+      const truncated = trimmed.length > MAX_CHARS
+      setRawText(truncated ? trimmed.slice(0, MAX_CHARS) : trimmed)
+      if (truncated) setPdfTruncated(true)
       setPdfStatus('done')
     } catch {
       setPdfStatus('error')
-      setPdfError('Network error. Please check your connection and try again.')
+      setPdfError('Could not read this PDF. The file may be corrupted or password-protected.')
     }
   }
 

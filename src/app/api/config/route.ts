@@ -30,8 +30,8 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    isAiConfigured: !!process.env.ANTHROPIC_API_KEY,
-    isGeminiConfigured: !!process.env.GOOGLE_API_KEY,
+    isAiConfigured: !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_PARSE_MODEL),
+    isGeminiConfigured: !!(process.env.GOOGLE_API_KEY && process.env.GEMINI_PARSE_MODEL),
     isDeployConfigured: !!(
       process.env.GITHUB_TOKEN &&
       process.env.GITHUB_ORG &&

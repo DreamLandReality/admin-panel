@@ -11,7 +11,7 @@ interface AiProviderStore {
 export const useAiProviderStore = create<AiProviderStore>()(
   persist(
     (set) => ({
-      provider: 'claude',
+      provider: 'gemini',
       setProvider: (provider) => set({ provider }),
     }),
     {
