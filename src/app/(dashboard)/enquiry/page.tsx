@@ -304,6 +304,15 @@ function EnquiryPanel({
           return
         }
         conversationRef.current = conversation
+        // Save conversation ID so the post-call webhook can match this submission
+        const convId = conversation.getId()
+        if (convId) {
+          fetch(`/api/voice-call/${enquiry.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save_conv_id', conversation_id: convId }),
+          })
+        }
       } catch {
         // Dev mode — silent failure acceptable
       }
@@ -492,27 +501,42 @@ function EnquiryPanel({
                       </p>
                     )}
 
-                    {/* Collected data */}
-                    {enquiry.call_status === 'completed' && enquiry.call_collected_data &&
-                      Object.keys(enquiry.call_collected_data).length > 0 && (
-                      <div className="space-y-2 pt-1">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-foreground-muted/55">
-                          Collected Info
-                        </p>
-                        <div className="space-y-1.5">
-                          {Object.entries(enquiry.call_collected_data).map(([key, value]) => (
-                            value && (
-                              <div key={key} className="flex items-start gap-2 text-body-sm">
-                                <span className="text-foreground-muted/60 shrink-0 min-w-[60px]">
-                                  {COLLECTED_DATA_LABELS[key] || key}:
-                                </span>
-                                <span className="text-foreground">{value}</span>
-                              </div>
-                            )
-                          ))}
+                    {/* AI summary + outcome */}
+                    {enquiry.call_status === 'completed' && enquiry.call_collected_data && (() => {
+                      const { summary, outcome, ...rest } = enquiry.call_collected_data as Record<string, string>
+                      return (
+                        <div className="space-y-3 pt-1">
+                          {outcome && (
+                            <span className={cn(
+                              'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                              outcome === 'Successful'
+                                ? 'bg-green-500/10 text-green-400'
+                                : 'bg-red-500/10 text-red-400'
+                            )}>
+                              {outcome}
+                            </span>
+                          )}
+                          {summary && (
+                            <div className="space-y-1.5">
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-foreground-muted/55">Summary</p>
+                              <p className="text-body-sm text-foreground/70 leading-relaxed">{summary}</p>
+                            </div>
+                          )}
+                          {Object.keys(rest).length > 0 && (
+                            <div className="space-y-1.5">
+                              {Object.entries(rest).map(([key, value]) => value && (
+                                <div key={key} className="flex items-start gap-2 text-body-sm">
+                                  <span className="text-foreground-muted/60 shrink-0 min-w-[60px]">
+                                    {COLLECTED_DATA_LABELS[key] || key}:
+                                  </span>
+                                  <span className="text-foreground">{value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
 
                     {/* Transcript toggle */}
                     {enquiry.call_transcript && (
@@ -529,9 +553,30 @@ function EnquiryPanel({
                           {transcriptOpen ? 'Hide' : 'View'} Transcript
                         </button>
                         {transcriptOpen && (
-                          <pre className="mt-2 p-3 rounded-md bg-foreground/[0.03] border border-border text-[11px] leading-relaxed text-foreground/70 whitespace-pre-wrap max-h-[300px] overflow-y-auto font-sans">
-                            {enquiry.call_transcript}
-                          </pre>
+                          <div className="mt-2 space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                            {enquiry.call_transcript.split('\n').filter(Boolean).map((line, i) => {
+                              const isAgent = line.startsWith('Agent:')
+                              const text = line.replace(/^(Agent|User):\s*/, '')
+                              return (
+                                <div key={i} className={cn('flex gap-2', isAgent ? 'justify-start' : 'justify-end')}>
+                                  {isAgent && (
+                                    <span className="shrink-0 mt-0.5 w-4 h-4 rounded-full bg-foreground/10 flex items-center justify-center text-[8px] text-foreground-muted">A</span>
+                                  )}
+                                  <p className={cn(
+                                    'max-w-[85%] rounded-xl px-3 py-1.5 text-[11px] leading-relaxed',
+                                    isAgent
+                                      ? 'bg-foreground/[0.05] text-foreground/70 rounded-tl-none'
+                                      : 'bg-foreground/[0.10] text-foreground/80 rounded-tr-none'
+                                  )}>
+                                    {text}
+                                  </p>
+                                  {!isAgent && (
+                                    <span className="shrink-0 mt-0.5 w-4 h-4 rounded-full bg-foreground/10 flex items-center justify-center text-[8px] text-foreground-muted">U</span>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
                         )}
                       </div>
                     )}

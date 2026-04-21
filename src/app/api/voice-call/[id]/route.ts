@@ -20,7 +20,8 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const { action } = await req.json()
+  const body = await req.json()
+  const { action, conversation_id } = body
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
   if (action === 'cancel') {
@@ -121,6 +122,21 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
     return NextResponse.json({ status: 'completed' })
+  }
+
+  if (action === 'save_conv_id') {
+    if (!conversation_id || typeof conversation_id !== 'string') {
+      return NextResponse.json({ error: 'Missing conversation_id' }, { status: 400 })
+    }
+    const { error } = await supabase
+      .from('form_submissions')
+      .update({ elevenlabs_conversation_id: conversation_id })
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ status: 'ok' })
   }
 
   return NextResponse.json({ error: 'Invalid action. Use "retry", "cancel", or "clear_signed_url".' }, { status: 400 })
