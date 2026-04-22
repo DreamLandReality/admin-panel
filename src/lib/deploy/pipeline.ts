@@ -40,6 +40,57 @@ import {
 import puppeteer from 'puppeteer'
 import { uploadToPrivateBucket } from '@/lib/utils/r2-storage'
 
+/**
+ * Update astro.config.mjs in the GitHub repo to inject the real site URL
+ * and enable sitemap generation.
+ *
+ * Replaces:
+ *   site: 'https://example.com'
+ * with:
+ *   site: 'https://actual-site-url.pages.dev'
+ *
+ * And adds sitemap integration if not present.
+ */
+async function injectAstroConfig(
+  repoFullName: string,
+  siteUrl: string,
+  commitMessage: string
+): Promise<void> {
+  const { content, sha } = await getFileContent(repoFullName, 'astro.config.mjs')
+  
+  let updated = content
+  
+  // Replace site URL
+  updated = updated.replace(
+    /site:\s*['"]https:\/\/example\.com['"]/,
+    `site: '${siteUrl}'`
+  )
+  
+  // Add sitemap import if not present
+  if (!updated.includes("from '@astrojs/sitemap'")) {
+    updated = updated.replace(
+      /(import\s+tailwind\s+from\s+['"]@astrojs\/tailwind['"];?)/,
+      "$1\nimport sitemap from '@astrojs/sitemap';"
+    )
+  }
+  
+  // Add sitemap to integrations if not present
+  if (!updated.includes('sitemap()')) {
+    updated = updated.replace(
+      /integrations:\s*\[\s*tailwind\(\)\s*\]/,
+      'integrations: [\n    tailwind(),\n    sitemap()\n  ]'
+    )
+  }
+  
+  await updateFileContent(
+    repoFullName,
+    'astro.config.mjs',
+    updated,
+    sha,
+    commitMessage
+  )
+}
+
 // ── Screenshot ────────────────────────────────────────────────────────────────
 
 /**
@@ -266,6 +317,13 @@ export async function runDeployPipeline(
       siteUrl = result.projectUrl
     }
     stableUrl = siteUrl  // save before cf_build overwrites with hash URL
+    
+    // Inject real site URL and sitemap into astro.config.mjs
+    await injectAstroConfig(
+      repoFullName!,
+      siteUrl,
+      `chore: configure site URL and sitemap for ${deployment.project_name}`
+    )
   })
 
   // Step 5: save_record
@@ -428,6 +486,13 @@ export async function runRedeployPipeline(
       JSON.stringify(manifest, null, 2),
       sha,
       `chore: republish site data for ${deployment.project_name}`
+    )
+    
+    // Update astro.config.mjs with current site URL and sitemap
+    await injectAstroConfig(
+      repoFullName,
+      siteUrl,
+      `chore: update site URL and sitemap for ${deployment.project_name}`
     )
   })
 
