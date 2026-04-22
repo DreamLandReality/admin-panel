@@ -584,7 +584,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   const iframeSrc = templatePreviewUrl ? getPageUrl(activePage) : 'about:blank'
 
   return (
-    <div ref={canvasRef} className="flex-1 min-w-0 bg-surface overflow-auto flex items-start justify-center py-6 px-6">
+    <div ref={canvasRef} className="relative z-0 flex flex-1 min-w-0 items-start justify-center overflow-auto bg-surface px-6 py-6">
       <div
         style={{
           width: `${deviceWidth}px`,
@@ -594,7 +594,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
           // Collapse the unused layout space below the scaled-down iframe
           marginBottom: `-${(1 - scale) * 100}vh`,
         }}
-        className="relative shadow-2xl"
+        className="relative z-0 shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]"
       >
         <iframe
           ref={iframeRef}

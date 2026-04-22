@@ -86,6 +86,13 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+  button, 
+  select, 
+  a,
+  input[type="range"], 
+  input[type="color"] {
+    @apply cursor-pointer;
+  }
 }
 
 @keyframes shake {

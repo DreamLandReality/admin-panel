@@ -53,8 +53,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={isDisabled}
         className={cn(
-          'font-medium transition-colors flex items-center justify-center gap-2',
-          'disabled:opacity-40 disabled:pointer-events-none',
+          'font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer',
+          'disabled:opacity-40 disabled:pointer-events-none disabled:cursor-not-allowed',
           variantCls[variant],
           !isIcon && sizeCls[size],
           className,

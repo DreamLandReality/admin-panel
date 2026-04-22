@@ -38,24 +38,28 @@ function toGeminiSchema(schema: any): any {
   if (!schema || typeof schema !== 'object') return schema
   const result: any = {}
 
-  if (schema.type) {
-    const t = (schema.type as string).toUpperCase()
-    if (['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'].includes(t)) {
-      result.type = t
-    } else {
-      result.type = 'STRING'
-    }
-  }
+  const rawType = (schema.type as string | undefined)?.toUpperCase()
+  result.type = rawType && ['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'].includes(rawType)
+    ? rawType
+    : 'STRING' // default — prevents Gemini rejecting typeless fields in required
 
   if (schema.description) result.description = schema.description
   if (schema.enum) result.enum = schema.enum
   if (schema.properties) {
     result.properties = {}
     for (const [k, v] of Object.entries(schema.properties as Record<string, any>)) {
-      result.properties[k] = toGeminiSchema(v)
+      const converted = toGeminiSchema(v)
+      // Only include properties that resolved to a valid schema object
+      if (converted && typeof converted === 'object') {
+        result.properties[k] = converted
+      }
     }
+    result.type = 'OBJECT'
   }
-  if (schema.items) result.items = toGeminiSchema(schema.items)
+  if (schema.items) {
+    result.items = toGeminiSchema(schema.items)
+    result.type = 'ARRAY'
+  }
   if (schema.required && result.properties) {
     const filtered = (schema.required as string[]).filter((k: string) => k in result.properties)
     if (filtered.length) result.required = filtered

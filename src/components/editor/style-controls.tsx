@@ -5,6 +5,7 @@ import { useWizardStore } from '@/stores/wizard-store'
 import { ButtonGroup } from '@/components/primitives'
 import { getFieldDefaults } from '@/lib/utils/style-defaults'
 import { postToIframe } from '@/lib/utils/iframe'
+import { ViewportSwitcher } from './viewport-switcher'
 import type { ManifestSection, StyleControl, ResponsiveStyleValue } from '@/types'
 
 // ─── STYLE_ICONS ──────────────────────────────────────────────────────────────
@@ -13,36 +14,6 @@ const STYLE_ICONS: Record<string, string> = {
   'align-left': 'M3 6h18M3 10h12M3 14h18M3 18h12',
   'align-center': 'M3 6h18M6 10h12M3 14h18M6 18h12',
   'align-right': 'M3 6h18M9 10h12M3 14h18M9 18h12',
-}
-
-// ─── Device SVG Icons ─────────────────────────────────────────────────────────
-
-function MobileIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="7" y="2" width="10" height="20" rx="2" />
-      <line x1="10" y1="18" x2="14" y2="18" />
-    </svg>
-  )
-}
-
-function TabletIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="4" y="2" width="16" height="20" rx="2" />
-      <line x1="10" y1="18" x2="14" y2="18" />
-    </svg>
-  )
-}
-
-function DesktopIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="3" width="20" height="14" rx="2" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-  )
 }
 
 // ─── StyleSection ─────────────────────────────────────────────────────────────
@@ -182,9 +153,9 @@ export function renderStyleControl(
 // ─── ResponsiveStyleSlider ────────────────────────────────────────────────────
 
 const BREAKPOINTS = [
-  { key: 'mobile' as const, label: 'Mobile', width: '375px', icon: MobileIcon },
-  { key: 'tablet' as const, label: 'Tablet', width: '768px', icon: TabletIcon },
-  { key: 'desktop' as const, label: 'Desktop', width: '1440px', icon: DesktopIcon },
+  { key: 'mobile' as const, label: 'Mobile', width: '375px' },
+  { key: 'tablet' as const, label: 'Tablet', width: '768px' },
+  { key: 'desktop' as const, label: 'Desktop', width: '1440px' },
 ]
 
 function ResponsiveStyleSlider({
@@ -197,7 +168,7 @@ function ResponsiveStyleSlider({
   onChange: (v: ResponsiveStyleValue) => void
 }) {
   // Use global viewport so switching breakpoint here also resizes the preview iframe
-  const { viewport, setViewport } = useWizardStore((s) => ({ viewport: s.viewport, setViewport: s.setViewport }))
+  const viewport = useWizardStore((s) => s.viewport)
   const unit = ctrl.unit ?? ''
   const raw = value[viewport] ?? ctrl.default ?? ''
   const numVal = parseFloat(raw as string) || (ctrl.min ?? 0)
@@ -217,29 +188,7 @@ function ResponsiveStyleSlider({
       </div>
 
       {/* Breakpoint Tabs */}
-      <div className="flex gap-0.5 bg-black/20 border border-white/5 rounded-md p-0.5">
-        {BREAKPOINTS.map((b) => {
-          const Icon = b.icon
-          const isActive = viewport === b.key
-          return (
-            <button
-              key={b.key}
-              type="button"
-              onClick={() => setViewport(b.key)}
-              title={`${b.label} (${b.width})`}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded transition-all',
-                isActive
-                  ? 'bg-white/10 text-foreground shadow-sm'
-                  : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5'
-              )}
-            >
-              <Icon size={12} />
-              <span>{b.label}</span>
-            </button>
-          )
-        })}
-      </div>
+      <ViewportSwitcher showLabels iconSize={12} />
 
       {/* Current value label */}
       <div className="text-xs text-muted-foreground/50">

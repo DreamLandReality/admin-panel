@@ -6,10 +6,10 @@ import { cn } from '@/lib/utils/cn'
 import { WizardShell } from '@/components/wizard/wizard-shell'
 import { StepTemplatePicker } from '@/components/wizard/step-template-picker'
 import { StepDataInput } from '@/components/wizard/step-data-input'
-import { EditorShell } from '@/components/editor/editor-shell'
 import { SyncHeaderContent } from '@/components/shared/sync-header-content'
 import { Skeleton } from '@/components/ui'
 import { useWizardStore } from '@/stores/wizard-store'
+import { ROUTES } from '@/lib/constants'
 import type { Template } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -288,10 +288,14 @@ function NewDeploymentPageContent() {
     init(controller.signal).catch(console.error)
   }
 
-  // ── Step 3: full-screen editor ─────────────────────────────────────────
-  if (!loading && !activeDeployment && currentStep === 3) {
-    return <EditorShell />
-  }
+  // ── Step 3: navigate to isolated editor route ─────────────────────────
+  useEffect(() => {
+    if (!loading && !activeDeployment && currentStep === 3) {
+      router.push(ROUTES.editorNew)
+    }
+  }, [loading, activeDeployment, currentStep, router])
+
+  if (!loading && !activeDeployment && currentStep === 3) return null
 
   // ── Loading skeleton ───────────────────────────────────────────────────
   if (loading) {

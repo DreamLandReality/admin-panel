@@ -1,13 +1,19 @@
 import type { ManifestSection } from '@/types'
 import { findAiSkipSections } from '@/lib/constants'
 
-// Remove fields marked aiIgnore: true from a properties map — recurses into nested objects
+// Remove fields marked aiIgnore: true — recurses into nested objects and syncs required arrays
 function filterAiIgnore(props: Record<string, any>): Record<string, any> {
   const filtered: Record<string, any> = {}
   for (const [key, value] of Object.entries(props)) {
     if (value?.aiIgnore) continue
     if (value?.properties) {
-      filtered[key] = { ...value, properties: filterAiIgnore(value.properties) }
+      const cleanedProps = filterAiIgnore(value.properties)
+      const cleanedRequired = (value.required as string[] | undefined)?.filter((k: string) => k in cleanedProps)
+      filtered[key] = {
+        ...value,
+        properties: cleanedProps,
+        ...(cleanedRequired?.length ? { required: cleanedRequired } : { required: undefined }),
+      }
     } else {
       filtered[key] = value
     }

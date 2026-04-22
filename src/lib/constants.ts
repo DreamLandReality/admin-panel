@@ -33,6 +33,8 @@ export const ROUTES = {
   enquiry: '/enquiry',
   deployment: (id: string) => `/deployments/${id}` as const,
   editDeployment: (id: string) => `/deployments/${id}/edit` as const,
+  editorNew: '/editor/new',
+  editor: (id: string) => `/editor/${id}` as const,
   template: (slug: string) => `/templates/${slug}` as const,
 } as const
 

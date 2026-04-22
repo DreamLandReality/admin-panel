@@ -7,20 +7,16 @@ import { useWizardStore } from '@/stores/wizard-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
 import { extractDraftThumbnail } from '@/lib/utils/draft-thumbnail'
 import { Button } from '@/components/ui/button'
-import { Spinner, Heading, ButtonGroup } from '@/components/primitives'
+import { Spinner, Heading } from '@/components/primitives'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
+import { DeleteSiteAction } from '@/components/shared/delete-site-action'
 import { useDeployTransitionStore } from '@/stores/deploy-transition-store'
 import { getIframeOrigin } from '@/lib/utils/iframe'
 import { PreviewCanvas } from './preview-canvas'
 import { RightPanel } from './right-panel'
 import { LeftPanel } from './left-panel'
 import { CollectionEditorPanel } from './collection-editor-panel'
-
-const VIEWPORT_OPTIONS = [
-  { value: 'desktop' as const, label: 'Desktop', icon: 'M3 4h18v12H3zM8 20h8M12 16v4' },
-  { value: 'tablet'  as const, label: 'Tablet',  icon: 'M4 4h16v16H4zM10 18h4' },
-  { value: 'mobile'  as const, label: 'Mobile',  icon: 'M7 2h10v20H7zM10 18h4' },
-]
+import { ViewportSwitcher } from './viewport-switcher'
 
 export function EditorShell() {
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -47,8 +43,7 @@ export function EditorShell() {
 
   const [saving, setSaving] = useState(false)
   const [showBackModal, setShowBackModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [isExiting, setIsExiting] = useState(false)
 
   // Revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -76,14 +71,19 @@ export function EditorShell() {
 
   const handleBack = useCallback(() => {
     if (isViewOnly) {
+      setIsExiting(true)
       useWizardStore.getState().reset()
       return
     }
     if (isDirty) {
       setShowBackModal(true)
     } else if (isEditMode) {
-      useWizardStore.getState().reset()
-      router.push('/')
+      setIsExiting(true)
+      // Delay navigation to prevent flash
+      requestAnimationFrame(() => {
+        useWizardStore.getState().reset()
+        router.push('/')
+      })
     } else {
       setStep(2)
     }
@@ -91,21 +91,25 @@ export function EditorShell() {
 
   function handleDiscard() {
     setShowBackModal(false)
+    setIsExiting(true)
     const { blobUrls, pendingImages: pending } = useWizardStore.getState()
     Object.values(blobUrls).forEach((url) => {
       if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
     })
     Object.values(pending).forEach(({ blobUrl }) => URL.revokeObjectURL(blobUrl))
 
-    if (isEditMode) {
-      useWizardStore.getState().reset()
-      router.push('/')
-    } else if (draftId) {
-      useWizardStore.setState({ isDirty: false, pendingImages: {}, blobUrls: {} })
-      setStep(2)
-    } else {
-      useWizardStore.getState().reset()
-    }
+    // Delay navigation to prevent flash
+    requestAnimationFrame(() => {
+      if (isEditMode) {
+        useWizardStore.getState().reset()
+        router.push('/')
+      } else if (draftId) {
+        useWizardStore.setState({ isDirty: false, pendingImages: {}, blobUrls: {} })
+        setStep(2)
+      } else {
+        useWizardStore.getState().reset()
+      }
+    })
   }
 
   // ── Shared upload helper ─────────────────────────────────────────────────────
@@ -237,84 +241,87 @@ export function EditorShell() {
   }
 
   return (
-    <div className="dark fixed inset-0 bg-background flex flex-col z-50">
+    <>
+      <div className="dark fixed inset-0 bg-background flex flex-col z-50">
+        {/* Exit overlay to prevent flash */}
+        {isExiting && (
+          <div className="absolute inset-0 bg-background z-[60] animate-fade-in" />
+        )}
+        
       {/* ── Top Toolbar ── */}
-      <div className="h-14 border-b border-white/10 flex items-center px-4 flex-shrink-0 gap-4">
+      <div className="h-14 border-b border-border bg-editor-bg/50 backdrop-blur-sm flex items-center px-6 flex-shrink-0 gap-6">
         {/* Left — Back + context label */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+          <Button variant="ghost" size="sm" onClick={handleBack} className="gap-2 hover:bg-white/5">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <path d="M9 11L5 7l4-4" />
             </svg>
             Back
           </Button>
-          <div className="w-px h-4 bg-white/10" />
-          <span className="text-xs text-muted-foreground truncate max-w-36">
-            {isEditMode ? 'Editing Live Site' : (selectedTemplate?.name ?? '')}
-          </span>
+          <div className="w-px h-5 bg-border" />
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/60" />
+            <span className="text-xs font-medium text-muted-foreground truncate max-w-40">
+              {isEditMode ? 'Live Site' : (selectedTemplate?.name ?? '')}
+            </span>
+          </div>
         </div>
 
-        {/* Center — Project name + save status badge */}
-        <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
-          <Heading variant="modal-title" as="span" className="truncate max-w-64 !font-light">
-            <span title={isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}>
-              {isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'New Deployment')}
+        {/* Center — Project name + save status badge + viewport switcher */}
+        <div className="flex-1 flex items-center justify-center gap-2.5 min-w-0">
+          <Heading variant="modal-title" as="span" className="truncate max-w-80 !font-medium">
+            <span title={isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'Untitled Project')}>
+              {isViewOnly ? (selectedTemplate?.name ?? '') : (projectName || 'Untitled Project')}
             </span>
           </Heading>
           {!isViewOnly && (
             saving
-              ? <span className="text-label uppercase tracking-label text-amber-400/80 border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 rounded flex-shrink-0 flex items-center gap-1.5">
-                  <Spinner size="xs" variant="accent" /> Saving…
+              ? <span className="text-label uppercase tracking-label text-amber-400/90 border border-amber-400/30 bg-amber-400/10 px-2 py-1 rounded-md flex-shrink-0 flex items-center gap-1.5 shadow-sm">
+                  <Spinner size="xs" variant="accent" /> Saving
                 </span>
               : (draftId || isEditMode) && !isDirty
-                ? <span className="text-label uppercase tracking-label text-emerald-400/80 border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 rounded flex-shrink-0">Saved</span>
-                : null
+                ? <span className="text-label uppercase tracking-label text-emerald-400/90 border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 rounded-md flex-shrink-0 shadow-sm">Saved</span>
+                : isDirty
+                  ? <span className="text-label uppercase tracking-label text-muted-foreground/60 border border-border bg-white/5 px-2 py-1 rounded-md flex-shrink-0">Unsaved</span>
+                  : null
           )}
+          <ViewportSwitcher iconSize={15} />
         </div>
 
-        {/* Right — Viewport switcher + action buttons */}
+        {/* Right — action buttons */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <ButtonGroup
-            size="sm"
-            options={VIEWPORT_OPTIONS.map((o) => ({
-              value: o.value,
-              title: o.label,
-              label: (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d={o.icon} />
-                </svg>
-              ),
-            }))}
-            value={viewport}
-            onChange={setViewport}
-            className="bg-white/10 rounded-lg p-0.5 gap-1"
-          />
-
           {!isViewOnly && (
             <>
-              <div className="w-px h-4 bg-white/10" />
-
-              {isEditMode && deploymentStatus === 'live' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDeleteModal(true)}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                >
-                  Delete Site
-                </Button>
-              )}
-
               <Button
                 variant={isDirty ? 'amber' : 'secondary'}
                 size="sm"
                 onClick={handleSave}
                 disabled={saving || !isDirty}
+                className="min-w-20"
               >
-                Save
+                {saving ? 'Saving...' : 'Save'}
               </Button>
 
-              <Button variant="primary" size="sm" onClick={handleDeployClick} disabled={saving}>
+              {isEditMode && deploymentStatus === 'live' && (
+                <DeleteSiteAction
+                  deploymentId={deploymentId}
+                  projectName={projectName}
+                  description={`"${projectName}" will be taken offline and removed from your dashboard. This cannot be undone.`}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:text-red-400 hover:bg-destructive/10 border border-transparent hover:border-destructive/20 transition-colors"
+                  onDeleted={() => {
+                    useWizardStore.getState().reset()
+                    router.push('/')
+                  }}
+                />
+              )}
+
+              <Button 
+                variant="primary" 
+                size="sm" 
+                onClick={handleDeployClick} 
+                disabled={saving}
+                className="min-w-20"
+              >
                 {isEditMode ? 'Publish' : 'Deploy'}
               </Button>
             </>
@@ -341,45 +348,25 @@ export function EditorShell() {
           </div>
         )}
       </div>
-
-      {/* Back confirmation modal */}
-      <ConfirmModal
-        open={showBackModal}
-        title={isEditMode ? 'Leave editor?' : (draftId ? 'Discard changes?' : 'Discard & leave?')}
-        description={
-          isEditMode
-            ? 'Any unsaved changes will be lost. Your last saved version will be preserved.'
-            : draftId
-              ? 'Your unsaved changes will be discarded and the last saved version will be restored.'
-              : 'All your work — including the project name and content — will be lost. This cannot be undone.'
-        }
-        confirmLabel={isEditMode ? 'Leave' : (draftId ? 'Discard Changes' : 'Discard & Leave')}
-        cancelLabel="Stay"
-        variant="danger"
-        onConfirm={handleDiscard}
-        onCancel={() => setShowBackModal(false)}
-      />
-
-      {/* Delete site confirmation modal */}
-      <ConfirmModal
-        open={showDeleteModal}
-        title="Delete site"
-        description={`"${projectName}" will be taken offline and removed from your dashboard. This cannot be undone.`}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete Site'}
-        cancelLabel="Keep Site"
-        variant="danger"
-        onCancel={() => setShowDeleteModal(false)}
-        onConfirm={async () => {
-          setDeleting(true)
-          try {
-            await fetch(`/api/deployments/${deploymentId}`, { method: 'DELETE' })
-            useWizardStore.getState().reset()
-            router.push('/')
-          } finally {
-            setDeleting(false)
-          }
-        }}
-      />
     </div>
-  )
+
+    {/* Back confirmation modal */}
+    <ConfirmModal
+      open={showBackModal}
+      title={isEditMode ? 'Leave editor?' : (draftId ? 'Discard changes?' : 'Discard & leave?')}
+      description={
+        isEditMode
+          ? 'Any unsaved changes will be lost. Your last saved version will be preserved.'
+          : draftId
+            ? 'Your unsaved changes will be discarded and the last saved version will be restored.'
+            : 'All your work — including the project name and content — will be lost. This cannot be undone.'
+      }
+      confirmLabel={isEditMode ? 'Leave' : (draftId ? 'Discard Changes' : 'Discard & Leave')}
+      cancelLabel="Stay"
+      variant="danger"
+      onConfirm={handleDiscard}
+      onCancel={() => setShowBackModal(false)}
+    />
+  </>
+)
 }

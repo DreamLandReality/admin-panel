@@ -3,13 +3,12 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import type { DeploymentCardData } from '@/types'
 import { ROUTES } from '@/lib/constants'
 import { StatusBadge } from '@/components/shared/status-badge'
+import { DeleteSiteAction } from '@/components/shared/delete-site-action'
 import { AnimatedCard } from '@/components/ui/animated-card'
-import { ConfirmModal } from '@/components/shared/confirm-modal'
 import {
   getThumbnailSrc,
   getImageFilterClass,
@@ -23,10 +22,7 @@ export function DeploymentCard({
   deployment: DeploymentCardData
   index: number
 }) {
-  const router = useRouter()
   const [imgLoaded, setImgLoaded] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const thumbnailSrc = getThumbnailSrc(deployment)
   const relativeTime = formatRelativeTime(deployment.updated_at)
   const imageFilter = getImageFilterClass(deployment.status)
@@ -34,12 +30,11 @@ export function DeploymentCard({
   const hasUnpublished = deployment.status === 'live' && deployment.has_unpublished_changes
 
   return (
-    <>
     <AnimatedCard index={index}>
       <div className="group relative rounded-xl bg-card overflow-hidden cursor-pointer">
         {/* Full-card link */}
         <Link
-          href={ROUTES.deployment(deployment.id)}
+          href={ROUTES.editor(deployment.id)}
           className="absolute inset-0 z-10"
           aria-label={`Edit ${deployment.project_name}`}
         />
@@ -89,7 +84,7 @@ export function DeploymentCard({
               rel="noopener noreferrer"
               title="View live site"
               aria-label="View live site"
-              className="absolute top-2.5 right-2.5 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 hover:text-white backdrop-blur-sm"
+              className="absolute top-2.5 right-2.5 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 hover:text-white backdrop-blur-sm cursor-pointer"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M7 1h4v4M11 1L5.5 6.5M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
@@ -99,23 +94,11 @@ export function DeploymentCard({
 
           {/* Delete button — only for live deployments */}
           {deployment.status === 'live' && (
-            <button
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setShowDeleteConfirm(true)
-              }}
-              title="Delete site"
-              aria-label="Delete site"
-              className="absolute top-2.5 right-10 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80 hover:text-white backdrop-blur-sm"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14H6L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4h6v2" />
-              </svg>
-            </button>
+            <DeleteSiteAction
+              deploymentId={deployment.id}
+              projectName={deployment.project_name}
+              className="absolute top-2.5 right-10 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 hover:text-red-400 backdrop-blur-sm cursor-pointer"
+            />
           )}
 
           {/* Unpublished changes strip — bottom of image */}
@@ -143,26 +126,5 @@ export function DeploymentCard({
         </div>
       </div>
     </AnimatedCard>
-
-    <ConfirmModal
-      open={showDeleteConfirm}
-      title="Delete site"
-      description={`"${deployment.project_name}" will be taken offline and moved to Archived. You can restore it at any time.`}
-      confirmLabel={deleting ? 'Deleting…' : 'Delete Site'}
-      cancelLabel="Keep Site"
-      variant="danger"
-      onCancel={() => setShowDeleteConfirm(false)}
-      onConfirm={async () => {
-        setDeleting(true)
-        try {
-          await fetch(`/api/deployments/${deployment.id}`, { method: 'DELETE' })
-          setShowDeleteConfirm(false)
-          router.refresh()
-        } finally {
-          setDeleting(false)
-        }
-      }}
-    />
-    </>
   )
 }

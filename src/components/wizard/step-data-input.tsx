@@ -26,7 +26,7 @@ async function extractPdfText(file: File): Promise<{ text: string }> {
     throw err
   }
 
-  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
   console.log('[pdf] workerSrc set to /pdf.worker.min.mjs')
 
   let data: Uint8Array

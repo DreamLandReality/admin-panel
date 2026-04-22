@@ -32,7 +32,7 @@ export function DraftCard({ draft, index }: { draft: DraftCardData; index: numbe
     null
 
   const href = isEditDraft
-    ? `${ROUTES.deployment(draft.deployment_id!)}?draft=${draft.id}`
+    ? ROUTES.editor(draft.deployment_id!)
     : ROUTES.resumeDraft(draft.id)
 
   return (

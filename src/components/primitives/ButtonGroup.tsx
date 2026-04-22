@@ -28,7 +28,7 @@ export function ButtonGroup<T extends string = string>({
   className,
 }: ButtonGroupProps<T>) {
   return (
-    <div className={cn('flex gap-1', className)}>
+    <div className={cn('flex gap-1 cursor-pointer', className)}>
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -36,7 +36,7 @@ export function ButtonGroup<T extends string = string>({
           title={opt.title}
           onClick={() => onChange(opt.value)}
           className={cn(
-            'flex-1 min-w-0 rounded px-2.5 text-xs flex items-center justify-center transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+            'flex-1 min-w-0 rounded px-2.5 text-xs flex items-center justify-center transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent cursor-pointer',
             sizeMap[size],
             value === opt.value
               ? 'bg-foreground text-background font-medium'

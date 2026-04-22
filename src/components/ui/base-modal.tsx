@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils/cn'
 import { useEffect } from 'react'
+import { Portal } from './portal'
 
 interface BaseModalProps {
   open: boolean
@@ -36,24 +37,26 @@ export function BaseModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-md"
-        onClick={onClose}
-      />
-      {/* Dialog */}
-      <div
-        className={cn(
-          'relative bg-background dark:bg-surface',
-          'border border-border shadow-modal overflow-hidden',
-          'w-full mx-4 animate-fade-in-up',
-          rounded && 'rounded-2xl',
-          maxWidthCls[maxWidth],
-        )}
-      >
-        {children}
+    <Portal>
+      <div className="fixed inset-0 z-modal flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-md"
+          onClick={onClose}
+        />
+        {/* Dialog */}
+        <div
+          className={cn(
+            'relative bg-background dark:bg-surface',
+            'border border-border shadow-modal overflow-hidden',
+            'w-full mx-4 animate-fade-in-up',
+            rounded && 'rounded-2xl',
+            maxWidthCls[maxWidth],
+          )}
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </Portal>
   )
 }

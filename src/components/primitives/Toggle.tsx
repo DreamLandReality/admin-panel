@@ -32,7 +32,7 @@ export function Toggle({ checked, onChange, size = 'sm', disabled, className }: 
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        'relative rounded-full transition-colors flex-shrink-0',
+        'relative rounded-full transition-colors flex-shrink-0 cursor-pointer',
         cfg.track,
         checked ? 'bg-white/50' : 'bg-white/10',
         disabled && 'opacity-40 pointer-events-none',

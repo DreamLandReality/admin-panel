@@ -2,6 +2,11 @@
 const isDev = process.env.NODE_ENV === 'development'
 
 const nextConfig = {
+  webpack: (config) => {
+    // pdfjs-dist v3 optionally requires 'canvas' for Node.js — stub it out for browser builds
+    config.resolve.alias.canvas = false
+    return config
+  },
   eslint: { ignoreDuringBuilds: true },
   images: {
     remotePatterns: [
