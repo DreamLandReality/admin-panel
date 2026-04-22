@@ -45,7 +45,7 @@ if (!slug) {
 }
 
 // ── Load manifest from local file ────────────────────────────────────────────
-const manifestPath = resolve(__dirname, `../../templates-library/${slug}/template.manifest.json`)
+const manifestPath = resolve(__dirname, `../../templates-library/templates/${slug}/template.manifest.json`)
 let manifest
 try {
   manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
