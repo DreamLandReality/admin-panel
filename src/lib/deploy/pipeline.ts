@@ -57,15 +57,15 @@ async function injectAstroConfig(
   commitMessage: string
 ): Promise<void> {
   const { content, sha } = await getFileContent(repoFullName, 'astro.config.mjs')
-  
+
   let updated = content
-  
-  // Replace site URL
+
+  // Replace site URL — match even with trailing comment
   updated = updated.replace(
-    /site:\s*['"]https:\/\/example\.com['"]/,
-    `site: '${siteUrl}'`
+    /site:\s*['"]https:\/\/example\.com['"][^,]*,?\s*(?:\/\/.*)?$/m,
+    `site: '${siteUrl}',`
   )
-  
+
   // Add sitemap import if not present
   if (!updated.includes("from '@astrojs/sitemap'")) {
     updated = updated.replace(
@@ -73,15 +73,15 @@ async function injectAstroConfig(
       "$1\nimport sitemap from '@astrojs/sitemap';"
     )
   }
-  
-  // Add sitemap to integrations if not present
+
+  // Add sitemap to integrations if not present — match various formatting
   if (!updated.includes('sitemap()')) {
     updated = updated.replace(
       /integrations:\s*\[\s*tailwind\(\)\s*\]/,
       'integrations: [\n    tailwind(),\n    sitemap()\n  ]'
     )
   }
-  
+
   await updateFileContent(
     repoFullName,
     'astro.config.mjs',
