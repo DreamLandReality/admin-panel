@@ -291,7 +291,9 @@ function NewDeploymentPageContent() {
   // ── Step 3: navigate to isolated editor route ─────────────────────────
   useEffect(() => {
     if (!loading && !activeDeployment && currentStep === 3) {
-      router.push(ROUTES.editorNew)
+      if (ROUTES.editorNew) {
+        router.push(ROUTES.editorNew)
+      }
     }
   }, [loading, activeDeployment, currentStep, router])
 
@@ -352,7 +354,18 @@ function NewDeploymentPageContent() {
 
 export default function NewDeploymentPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="rounded-xl overflow-hidden bg-card">
+          <Skeleton className="aspect-card w-full" />
+          <div className="p-3">
+            <Skeleton className="h-2.5 w-1/3 mb-1" />
+            <Skeleton className="h-4 w-full mb-1.5" />
+            <Skeleton className="h-2.5 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>}>
       <NewDeploymentPageContent />
     </Suspense>
   )
