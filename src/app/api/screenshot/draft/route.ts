@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildDraftPreviewHtml } from '@/lib/utils/draft-preview-html'
 import { uploadToPrivateBucket } from '@/lib/utils/r2-storage'

@@ -2,6 +2,8 @@
 
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { ButtonGroup } from '@/components/primitives'
 import { getFieldDefaults } from '@/lib/utils/style-defaults'
 import { postToIframe } from '@/lib/utils/iframe'
@@ -31,9 +33,9 @@ export function StyleSection({
   controls: StyleControl[]
   iframeRef: React.RefObject<HTMLIFrameElement | null>
 }) {
-  const sectionData = useWizardStore((s) => s.sectionData)
+  const sectionData = useEditorStore((s) => s.sectionData)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const updateStyle = useWizardStore((s) => s.updateStyle)
+  const updateStyle = useEditorStore((s) => s.updateStyle)
   const section = selectedTemplate?.manifest?.sections?.find((s: ManifestSection) => s.id === sectionId)
   const defaults = getFieldDefaults(section?.styleControls, styleKey)
   const rawSectionData = sectionData[sectionId]
@@ -168,7 +170,7 @@ function ResponsiveStyleSlider({
   onChange: (v: ResponsiveStyleValue) => void
 }) {
   // Use global viewport so switching breakpoint here also resizes the preview iframe
-  const viewport = useWizardStore((s) => s.viewport)
+  const viewport = useUiStore((s) => s.viewport)
   const unit = ctrl.unit ?? ''
   const raw = value[viewport] ?? ctrl.default ?? ''
   const numVal = parseFloat(raw as string) || (ctrl.min ?? 0)

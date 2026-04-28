@@ -7,7 +7,10 @@ const nextConfig = {
     config.resolve.alias.canvas = false
     return config
   },
-  eslint: { ignoreDuringBuilds: true },
+  eslint: {
+    dirs: ['src'],
+    ignoreDuringBuilds: true, // remove after T-AP cleanup passes lint clean
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '*.r2.dev' },

@@ -1,4 +1,14 @@
 import type { SiteData, TemplateManifest, ValidationError } from '@/types'
+import {
+  filterGateActionsForSections,
+  isManifestSectionEnabled,
+  normalizeManifestGates,
+  validateLeadSourceContract,
+} from '@/lib/utils/manifest-contract'
+import {
+  detectProductionReadinessIssues,
+  summarizeProductionReadinessIssues,
+} from '@/lib/utils/production-readiness'
 
 /**
  * Walk every value in an object/array tree and collect string leaves.
@@ -46,6 +56,25 @@ function findWidgetFields(schema: any, widget: string, prefix = ''): string[] {
   return found
 }
 
+function getGateActionOwnerSectionIds(
+  actionId: string,
+  actionOwnership: Record<string, string[]> | undefined
+): string[] {
+  const ownerSectionIds = actionOwnership?.[actionId]
+  return Array.isArray(ownerSectionIds) ? ownerSectionIds : []
+}
+
+function getDownloadTargetFields(section: TemplateManifest['sections'][number]): string[] {
+  const fileFields = findWidgetFields(section.schema, 'fileUpload')
+  const requiredFields = section.schema?.required ?? []
+  const requiredFileFields = fileFields.filter((fieldPath) => {
+    const topLevelKey = fieldPath.split('.')[0]
+    return !fieldPath.includes('.') && requiredFields.includes(topLevelKey)
+  })
+
+  return requiredFileFields.length > 0 ? requiredFileFields : fileFields
+}
+
 /**
  * Resolve a dot-notation path into a value from an object.
  * Returns undefined if the path doesn't resolve.
@@ -55,6 +84,13 @@ function getByPath(obj: any, path: string): unknown {
     if (acc === undefined || acc === null) return undefined
     return (acc as any)[key]
   }, obj)
+}
+
+function isMissingAssetTarget(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof value !== 'string') return false
+  const normalized = value.trim()
+  return normalized === '' || normalized === '#' || normalized.toLowerCase() === 'null'
 }
 
 export function validateDeployReady(
@@ -163,21 +199,74 @@ export function validateDeployReady(
     }
   }
 
-  // ── 6. Warnings: images still using template defaults (contain /templates/) ─
-  const defaultImagePaths: string[] = []
-  for (const [path, value] of allStrings) {
-    if (
-      typeof value === 'string' &&
-      value.includes('/templates/') &&
-      (value.includes('.jpg') || value.includes('.png') || value.includes('.webp') || value.includes('.jpeg'))
-    ) {
-      defaultImagePaths.push(path)
-    }
+  // ── 6. Warnings: important default content still present ─────────────────
+  const readinessWarning = summarizeProductionReadinessIssues(
+    detectProductionReadinessIssues(siteData, manifest)
+  )
+  if (readinessWarning) warnings.push(readinessWarning)
+
+  // ── 7. Gate actions must have an enabled form provider ───────────────────
+  const manifestWithNormalizedGates = JSON.parse(JSON.stringify(manifest)) as TemplateManifest
+  normalizeManifestGates(manifestWithNormalizedGates)
+  const sectionIds = new Set(manifestWithNormalizedGates.sections.map((section) => section.id))
+
+  for (const message of validateLeadSourceContract(manifestWithNormalizedGates)) {
+    errors.push({
+      field: 'leadSources',
+      message,
+      type: 'invalid_gate',
+    })
   }
-  if (defaultImagePaths.length > 0) {
-    warnings.push(
-      `${defaultImagePaths.length} image${defaultImagePaths.length > 1 ? 's' : ''} still use${defaultImagePaths.length === 1 ? 's' : ''} template defaults. Consider uploading custom images.`
+
+  for (const gate of manifestWithNormalizedGates.gates ?? []) {
+    const actionOwnership = manifestWithNormalizedGates.gateActionOwnership?.[gate.id]
+    const enabledActions = filterGateActionsForSections(
+      gate.actions,
+      _sections,
+      actionOwnership
     )
+    if (enabledActions.length === 0) continue
+
+    if (!gate.formSectionId || !sectionIds.has(gate.formSectionId)) {
+      errors.push({
+        field: `gates.${gate.id}.formSectionId`,
+        message: `Gate "${gate.id}" has enabled actions but no valid form provider section.`,
+        type: 'invalid_gate',
+      })
+      continue
+    }
+
+    if (!isManifestSectionEnabled(gate.formSectionId, _sections)) {
+      errors.push({
+        field: `gates.${gate.id}.formSectionId`,
+        message: `Gate "${gate.id}" still has enabled actions (${enabledActions.map((action) => action.id).join(', ')}) but form section "${gate.formSectionId}" is disabled.`,
+        type: 'invalid_gate',
+      })
+      continue
+    }
+
+    for (const action of enabledActions) {
+      if (action.mode !== 'download') continue
+
+      const ownerSectionIds = getGateActionOwnerSectionIds(action.id, actionOwnership)
+      for (const sectionId of ownerSectionIds) {
+        if (!isManifestSectionEnabled(sectionId, _sections)) continue
+
+        const section = manifestWithNormalizedGates.sections.find((item) => item.id === sectionId)
+        if (!section) continue
+
+        const fileFields = getDownloadTargetFields(section)
+        const sectionData = (siteData as any)[sectionId]
+        for (const fieldPath of fileFields) {
+          const value = getByPath(sectionData, fieldPath)
+          if (!isMissingAssetTarget(value)) continue
+
+          warnings.push(
+            `Gate "${gate.id}" download action "${action.id}" is enabled, but "${section.name}" is missing file "${fieldPath}". The site can deploy, but visitors will see the template's download_unavailable message.`
+          )
+        }
+      }
+    }
   }
 
   return {

@@ -7,6 +7,7 @@ import { Trash } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils/cn'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
+import { deploymentService } from '@/services/deployment'
 
 interface DeleteSiteActionProps {
   deploymentId: string
@@ -38,11 +39,9 @@ export function DeleteSiteAction({
   async function handleConfirm() {
     setDeleting(true)
     try {
-      const res = await fetch(`/api/deployments/${deploymentId}`, { method: 'DELETE' })
-      const data = await res.json().catch(() => ({}))
-
-      if (!res.ok) {
-        throw new Error(data?.error ?? 'Failed to delete site.')
+      const result = await deploymentService.delete(deploymentId)
+      if (!result.ok) {
+        throw new Error(result.error.message)
       }
 
       setOpen(false)

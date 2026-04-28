@@ -2,9 +2,7 @@
 
 import { cn } from '@/lib/utils/cn'
 import { Monitor, TabletSmartphone, Smartphone } from 'lucide-react'
-import { useWizardStore } from '@/stores/wizard-store'
-
-type Viewport = 'mobile' | 'tablet' | 'desktop'
+import { useUiStore } from '@/stores/ui-store'
 
 const VIEWPORT_CONFIG = {
   mobile: { label: 'Mobile', icon: Smartphone },
@@ -26,7 +24,7 @@ export function ViewportSwitcher({
   className,
   iconSize = 14
 }: ViewportSwitcherProps) {
-  const { viewport, setViewport } = useWizardStore((s) => ({ 
+  const { viewport, setViewport } = useUiStore((s) => ({
     viewport: s.viewport, 
     setViewport: s.setViewport 
   }))

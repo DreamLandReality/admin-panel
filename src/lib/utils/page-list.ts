@@ -1,9 +1,10 @@
 // Shared utility: build a flat list of all pages in a template
 // Used by left-panel.tsx and PanelPagePicker in right-panel.tsx
+import { getManifestDefaultPageId } from './manifest-contract'
 
 export type PageEntry = {
   kind: 'static' | 'dynamic' | 'dynamic-parent'
-  id: string        // 'home' | '404' | '<slug>' | '__parent:<pageId>'
+  id: string        // manifest page id | '<slug>' | '__parent:<pageId>'
   name: string
   path: string
   dynamicPageId?: string   // manifest page.id that generated this (e.g. "property-detail")
@@ -32,9 +33,10 @@ export function buildPageList(
   }
 
   // 2. Implicit pages derived from section.page values (backward compat)
+  const defaultPageId = getManifestDefaultPageId(manifest)
   for (const section of manifest?.sections ?? []) {
     const pg = section.page
-    if (pg && pg !== '*' && pg !== 'home' && !seenIds.has(pg)) {
+    if (pg && pg !== '*' && pg !== defaultPageId && !seenIds.has(pg)) {
       pages.push({ kind: 'static', id: pg, name: section.name, path: `/${pg}` })
       seenIds.add(pg)
     }

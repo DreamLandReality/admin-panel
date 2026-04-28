@@ -1,7 +1,6 @@
 'use client'
 
-import { cn } from '@/lib/utils/cn'
-import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
 import { ViewportSwitcher } from './viewport-switcher'
 
 interface ResponsiveSliderProps {
@@ -21,7 +20,7 @@ interface ResponsiveSliderProps {
 
 export function ResponsiveSlider({ label, value, config, onChange }: ResponsiveSliderProps) {
   // Use global viewport so switching here also resizes the preview iframe
-  const viewport = useWizardStore((s) => s.viewport)
+  const viewport = useUiStore((s) => s.viewport)
 
   const currentConfig = config[viewport]
   const currentValue = parseFloat(value[viewport])

@@ -1,48 +1,27 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { Conversation } from '@11labs/client'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
-  Mail, MailOpen, Phone, Search, ChevronDown, ChevronUp,
+  Mail, Phone, Search, ChevronDown, ChevronUp,
   ChevronsUpDown, ExternalLink, Check, CheckCheck, X,
-  ArrowRight, ChevronLeft, ChevronRight, Inbox, Tag,
-  PhoneCall, PhoneOff, RotateCw, XCircle, Clock,
+  ArrowRight, ChevronLeft, ChevronRight,
+  PhoneCall, RotateCw, XCircle, Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { Skeleton } from '@/components/ui'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import {
+  useEnquiriesQuery,
+  useMarkEnquiryReadMutation,
+  useVoiceCallActionMutation,
+} from '@/hooks/queries/use-enquiries-query'
 import { useHeaderStore } from '@/stores/header-store'
+import { type CallStatus, type Enquiry } from '@/services/enquiry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CallStatus = 'pending' | 'scheduled' | 'calling' | 'completed' | 'no_answer' | 'failed' | 'cancelled' | 'skipped'
-
-type Enquiry = {
-  id: string
-  deployment_id: string
-  deployment_slug: string
-  name: string
-  email: string
-  phone: string | null
-  message: string | null
-  source_url: string
-  form_type: string
-  is_read: boolean
-  created_at: string
-  deployments: { project_name: string } | null
-  call_status: CallStatus
-  call_scheduled_for: string | null
-  call_completed_at: string | null
-  call_transcript: string | null
-  call_collected_data: Record<string, string> | null
-  call_duration_seconds: number | null
-  call_attempts: number
-  call_signed_url: string | null
-  call_property_context: string | null
-}
-
-type StatusFilter = 'all' | 'unread' | 'price-unlock' | 'contact'
+type StatusFilter = 'all' | 'unread' | `source:${string}`
 type SortCol = 'name' | 'date' | 'property'
 type SortDir = 'asc' | 'desc'
 
@@ -69,47 +48,6 @@ function timeAgo(iso: string) {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function StatCard({
-  label, value, sub, icon, accent,
-}: {
-  label: string
-  value: number | string
-  sub?: string
-  icon: React.ReactNode
-  accent?: 'amber' | 'info' | 'success' | 'default'
-}) {
-  const iconColors = {
-    amber: 'bg-amber-500/10 border-amber-500/20 text-amber-500',
-    info: 'bg-info/10 border-info/20 text-info',
-    success: 'bg-success/10 border-success/20 text-success',
-    default: 'bg-foreground/[0.05] border-border text-foreground-muted',
-  }
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-5 py-4 flex-1">
-      <div>
-        <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-2">
-          {label}
-        </p>
-        <p className={cn(
-          'font-serif text-[28px] font-light tabular-nums leading-none',
-          accent === 'amber' && Number(value) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'
-        )}>
-          {value}
-        </p>
-        {sub && (
-          <p className="text-micro uppercase tracking-label text-foreground-muted/60 mt-1.5">{sub}</p>
-        )}
-      </div>
-      <div className={cn(
-        'w-10 h-10 rounded-full border flex items-center justify-center shrink-0',
-        iconColors[accent ?? 'default']
-      )}>
-        {icon}
-      </div>
-    </div>
-  )
-}
 
 function FilterBtn({
   label, active, open, onToggle, children,
@@ -154,7 +92,7 @@ function DropItem({ selected, onClick, children }: { selected: boolean; onClick:
   )
 }
 
-function SortIcon({ col, active, dir }: { col: string; active: boolean; dir: SortDir }) {
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   if (!active) return <ChevronsUpDown size={10} strokeWidth={2} className="text-foreground-muted/40" />
   return dir === 'asc'
     ? <ChevronUp size={10} strokeWidth={2.5} className="text-foreground" />
@@ -163,12 +101,17 @@ function SortIcon({ col, active, dir }: { col: string; active: boolean; dir: Sor
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ isRead, isPriceUnlock }: { isRead: boolean; isPriceUnlock: boolean }) {
-  if (!isRead && isPriceUnlock) {
+function isLeadSourceAccent(source: Enquiry['source'] | undefined) {
+  return source?.kind === 'gate'
+}
+
+function StatusBadge({ isRead, source }: { isRead: boolean; source?: Enquiry['source'] }) {
+  const isAccent = isLeadSourceAccent(source)
+  if (!isRead && isAccent) {
     return (
       <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full text-[9px] font-bold uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 whitespace-nowrap">
         <span className="w-1 h-1 rounded-full bg-amber-500 shrink-0" />
-        Price Unlock
+        {source?.label ?? 'New'}
       </span>
     )
   }
@@ -187,15 +130,19 @@ function StatusBadge({ isRead, isPriceUnlock }: { isRead: boolean; isPriceUnlock
   )
 }
 
-function TypePill({ isPriceUnlock }: { isPriceUnlock: boolean }) {
+function TypePill({ source }: { source: Enquiry['source'] }) {
+  const isAccent = isLeadSourceAccent(source)
+  const isUnknown = !source.known
   return (
     <span className={cn(
       'inline-flex items-center h-[16px] px-1.5 rounded-sm text-[9px] font-bold uppercase tracking-widest border leading-none',
-      isPriceUnlock
+      isUnknown
+        ? 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+        : isAccent
         ? 'bg-amber-500/[0.07] border-amber-500/15 text-amber-600 dark:text-amber-400'
         : 'bg-foreground/[0.04] border-border/60 text-foreground-muted/70'
     )}>
-      {isPriceUnlock ? 'Price Unlock' : 'Contact'}
+      {source.label}
     </span>
   )
 }
@@ -252,7 +199,6 @@ function EnquiryPanel({
   marking,
   onCallAction,
   callActionLoading,
-  onReload,
 }: {
   enquiry: Enquiry | null
   onClose: () => void
@@ -260,72 +206,10 @@ function EnquiryPanel({
   marking: string | null
   onCallAction: (id: string, action: 'retry' | 'cancel') => void
   callActionLoading: string | null
-  onReload: () => void
 }) {
   const [transcriptOpen, setTranscriptOpen] = useState(false)
-  const [callLive, setCallLive] = useState(false)
-  const conversationRef = useRef<Conversation | null>(null)
-
-  useEffect(() => {
-    if (!enquiry?.call_signed_url || enquiry.call_status !== 'calling') return
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        const propertyName = enquiry.deployments?.project_name ?? enquiry.deployment_slug
-        const ctx = enquiry.call_property_context ?? ''
-        const conversation = await Conversation.startSession({
-          signedUrl: enquiry.call_signed_url as string,
-          dynamicVariables: {
-            caller_name: enquiry.name,
-            property_name: propertyName,
-          },
-          overrides: ctx ? {
-            agent: {
-              prompt: {
-                prompt: `The caller's name is ${enquiry.name}. They enquired about "${propertyName}".\n\nProperty details:\n${ctx}\n\nGreet them by name and reference this property. Only mention details that are explicitly listed in the property details above — do not assume or invent any information not provided.`
-              }
-            }
-          } : undefined,
-          onConnect: () => { if (!cancelled) setCallLive(true) },
-          onDisconnect: () => {
-            if (cancelled) return
-            setCallLive(false)
-            fetch(`/api/voice-call/${enquiry.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'complete_dev_call' }),
-            })
-            setTimeout(onReload, 2000)
-          },
-        })
-        if (cancelled) {
-          conversation.endSession()
-          return
-        }
-        conversationRef.current = conversation
-        // Save conversation ID so the post-call webhook can match this submission
-        const convId = conversation.getId()
-        if (convId) {
-          fetch(`/api/voice-call/${enquiry.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'save_conv_id', conversation_id: convId }),
-          })
-        }
-      } catch {
-        // Dev mode — silent failure acceptable
-      }
-    })()
-
-    return () => {
-      cancelled = true
-      conversationRef.current?.endSession()
-      conversationRef.current = null
-    }
-  }, [enquiry?.id, enquiry?.call_signed_url, enquiry?.call_status, enquiry?.call_property_context, onReload])
   const isOpen = !!enquiry
-  const isPriceUnlock = enquiry?.form_type === 'price-unlock'
+  const isSourceAccent = isLeadSourceAccent(enquiry?.source)
   const isUnread = enquiry ? !enquiry.is_read : false
   const projectName = enquiry
     ? (enquiry.deployments?.project_name ?? enquiry.deployment_slug)
@@ -352,12 +236,12 @@ function EnquiryPanel({
             {/* Panel header */}
             <div className={cn(
               'flex items-start justify-between px-7 pt-7 pb-6 border-b border-border shrink-0',
-              isPriceUnlock && isUnread && 'border-amber-500/10'
+              isSourceAccent && isUnread && 'border-amber-500/10'
             )}>
               {/* Left accent bar in panel */}
               <div className={cn(
                 'absolute left-0 top-8 h-12 w-[3px] rounded-r-full',
-                isUnread ? isPriceUnlock ? 'bg-amber-500' : 'bg-foreground/30' : 'bg-transparent'
+                isUnread ? isSourceAccent ? 'bg-amber-500' : 'bg-foreground/30' : 'bg-transparent'
               )} />
 
               <div className="min-w-0 pr-4">
@@ -368,8 +252,8 @@ function EnquiryPanel({
                   {enquiry.name}
                 </h2>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <StatusBadge isRead={enquiry.is_read} isPriceUnlock={!!isPriceUnlock} />
-                  <TypePill isPriceUnlock={!!isPriceUnlock} />
+                  <StatusBadge isRead={enquiry.is_read} source={enquiry.source} />
+                  <TypePill source={enquiry.source} />
                 </div>
               </div>
 
@@ -420,7 +304,7 @@ function EnquiryPanel({
                 </p>
                 <div className="flex items-center gap-2">
                   <span className="text-body-sm text-foreground font-medium">{projectName}</span>
-                  <TypePill isPriceUnlock={!!isPriceUnlock} />
+                  <TypePill source={enquiry.source} />
                 </div>
               </div>
 
@@ -432,7 +316,7 @@ function EnquiryPanel({
                   </p>
                   <blockquote className={cn(
                     'border-l-2 pl-4 py-1',
-                    isPriceUnlock ? 'border-amber-500/30' : 'border-border'
+                    isSourceAccent ? 'border-amber-500/30' : 'border-border'
                   )}>
                     <p className="font-serif text-[14px] italic text-foreground/65 leading-relaxed whitespace-pre-wrap">
                       &ldquo;{enquiry.message}&rdquo;
@@ -471,19 +355,9 @@ function EnquiryPanel({
                     Voice Call
                   </p>
                   <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-                    {/* Live call indicator (dev mode) */}
-                    {callLive && (
-                      <div className="flex items-center gap-2.5">
-                        <span className="relative flex h-2.5 w-2.5 shrink-0">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                        </span>
-                        <span className="text-body-sm font-medium text-foreground">Live — speak now</span>
-                      </div>
-                    )}
                     {/* Status + duration */}
                     <div className="flex items-center justify-between">
-                      {!callLive && <CallStatusBadge status={enquiry.call_status} />}
+                      <CallStatusBadge status={enquiry.call_status} />
                       {enquiry.call_duration_seconds != null && enquiry.call_duration_seconds > 0 && (
                         <span className="text-micro tabular-nums text-foreground-muted">
                           {formatDuration(enquiry.call_duration_seconds)}
@@ -627,16 +501,6 @@ function EnquiryPanel({
                   Cancel Call
                 </button>
               )}
-              {/* End call (dev mode live session) */}
-              {callLive && (
-                <button
-                  onClick={() => conversationRef.current?.endSession()}
-                  className="flex items-center gap-1.5 h-9 px-4 rounded-lg border border-red-500/30 text-label-lg font-semibold uppercase tracking-label text-red-500 hover:bg-red-500/5 hover:border-red-500/50 transition-all"
-                >
-                  <PhoneOff size={10} strokeWidth={2.5} />
-                  End Call
-                </button>
-              )}
             </div>
           </>
         )}
@@ -727,7 +591,7 @@ function TH({
   const inner = (
     <span className="flex items-center gap-1.5">
       {children}
-      {sortable && col && <SortIcon col={col} active={!!active} dir={dir ?? 'desc'} />}
+      {sortable && col && <SortIcon active={!!active} dir={dir ?? 'desc'} />}
     </span>
   )
   if (sortable && col && onSort) {
@@ -753,9 +617,11 @@ function TH({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EnquiryPage() {
-  const [enquiries, setEnquiries] = useState<Enquiry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, isLoading, error, refetch } = useEnquiriesQuery()
+  const markReadMutation = useMarkEnquiryReadMutation()
+  const voiceCallMutation = useVoiceCallActionMutation()
+  const enquiries = useMemo(() => data?.data ?? [], [data?.data])
+  const reloadEnquiries = useCallback(() => { void refetch() }, [refetch])
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [propertyFilter, setPropertyFilter] = useState('all')
@@ -773,25 +639,8 @@ export default function EnquiryPage() {
 
   const { setStats, clearStats } = useHeaderStore()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/enquiries')
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed to load')
-      setEnquiries(json.data)
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
   useEffect(() => {
-    if (!loading && !error) {
+    if (!isLoading && !error) {
       const unread = enquiries.filter((e) => !e.is_read).length
       setStats([
         { label: 'Total', value: enquiries.length },
@@ -799,55 +648,32 @@ export default function EnquiryPage() {
       ])
     }
     return () => clearStats()
-  }, [enquiries, loading, error, setStats, clearStats])
+  }, [enquiries, isLoading, error, setStats, clearStats])
 
   const markRead = useCallback(async (id: string) => {
     if (markingId === id) return
     setMarkingId(id)
     try {
-      await fetch('/api/enquiries', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-      setEnquiries((prev) => prev.map((e) => e.id === id ? { ...e, is_read: true } : e))
+      await markReadMutation.mutateAsync(id)
     } finally {
       setMarkingId(null)
     }
-  }, [markingId])
+  }, [markReadMutation, markingId])
 
   const markAllRead = useCallback(async () => {
     const ids = enquiries.filter((e) => !e.is_read).map((e) => e.id)
     if (!ids.length) return
-    await Promise.all(ids.map((id) =>
-      fetch('/api/enquiries', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-    ))
-    setEnquiries((prev) => prev.map((e) => ({ ...e, is_read: true })))
-  }, [enquiries])
+    await Promise.all(ids.map((id) => markReadMutation.mutateAsync(id)))
+  }, [enquiries, markReadMutation])
 
   const handleCallAction = useCallback(async (id: string, action: 'retry' | 'cancel') => {
     setCallActionLoading(id)
     try {
-      const res = await fetch(`/api/voice-call/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      })
-      if (res.ok) {
-        const result = await res.json()
-        const newStatus = result.status === 'cancelled' ? 'cancelled' : 'scheduled'
-        setEnquiries((prev) =>
-          prev.map((e) => e.id === id ? { ...e, call_status: newStatus as CallStatus } : e)
-        )
-      }
+      await voiceCallMutation.mutateAsync({ id, action })
     } finally {
       setCallActionLoading(null)
     }
-  }, [])
+  }, [voiceCallMutation])
 
   useEffect(() => {
     if (!propOpen && !statusOpen) return
@@ -873,21 +699,25 @@ export default function EnquiryPage() {
     ])).values()
   )
 
+  const sourceFilterOptions = Array.from(
+    new Map(enquiries.map((enquiry) => [
+      enquiry.source.id,
+      { value: `source:${enquiry.source.id}` as StatusFilter, label: enquiry.source.label },
+    ])).values()
+  ).sort((a, b) => a.label.localeCompare(b.label))
+
   const statusFilterOptions: { value: StatusFilter; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'unread', label: 'New / Unread' },
-    { value: 'price-unlock', label: 'Price Unlock' },
-    { value: 'contact', label: 'Contact' },
+    ...sourceFilterOptions,
   ]
 
   const unreadCount = enquiries.filter((e) => !e.is_read).length
-  const priceUnlockCount = enquiries.filter((e) => e.form_type === 'price-unlock').length
 
   const filtered = enquiries
     .filter((e) => {
       if (statusFilter === 'unread') return !e.is_read
-      if (statusFilter === 'price-unlock') return e.form_type === 'price-unlock'
-      if (statusFilter === 'contact') return e.form_type !== 'price-unlock'
+      if (statusFilter.startsWith('source:')) return e.source.id === statusFilter.slice('source:'.length)
       return true
     })
     .filter((e) => propertyFilter === 'all' || e.deployment_slug === propertyFilter)
@@ -915,7 +745,6 @@ export default function EnquiryPage() {
       return sortDir === 'asc' ? cmp : -cmp
     })
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const selectedEnquiry = enquiries.find((e) => e.id === selectedId) ?? null
 
@@ -926,7 +755,7 @@ export default function EnquiryPage() {
   const GRID = 'grid-cols-[6px_minmax(0,2.5fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_130px_110px_40px]'
 
   // ── Loading ────────────────────────────────────────────────────────────────
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex flex-col animate-fade-in gap-6">
         <div className="flex items-center gap-2.5">
@@ -966,7 +795,14 @@ export default function EnquiryPage() {
   }
 
   if (error) {
-    return <ErrorState heading="Failed to load enquiries" description={error} onRetry={load} className="h-64" />
+    return (
+      <ErrorState
+        heading="Failed to load enquiries"
+        description={error instanceof Error ? error.message : 'Failed to load'}
+        onRetry={reloadEnquiries}
+        className="h-64"
+      />
+    )
   }
 
   if (enquiries.length === 0) {
@@ -1095,7 +931,7 @@ export default function EnquiryPage() {
           ) : (
             paginated.map((enquiry) => {
               const projectName = enquiry.deployments?.project_name ?? enquiry.deployment_slug
-              const isPriceUnlock = enquiry.form_type === 'price-unlock'
+              const isSourceAccent = isLeadSourceAccent(enquiry.source)
               const isUnread = !enquiry.is_read
               const isSelected = selectedId === enquiry.id
 
@@ -1106,7 +942,7 @@ export default function EnquiryPage() {
                     'relative border-b border-border/50 last:border-0 transition-colors duration-150 cursor-pointer group',
                     isSelected
                       ? 'bg-surface-active'
-                      : isUnread && isPriceUnlock
+                      : isUnread && isSourceAccent
                         ? 'bg-amber-500/[0.015] hover:bg-amber-500/[0.03]'
                         : isUnread
                           ? 'bg-foreground/[0.008] hover:bg-surface-hover'
@@ -1120,7 +956,7 @@ export default function EnquiryPage() {
                     isSelected
                       ? 'bg-foreground/40'
                       : isUnread
-                        ? isPriceUnlock ? 'bg-amber-500/70' : 'bg-foreground/20'
+                        ? isSourceAccent ? 'bg-amber-500/70' : 'bg-foreground/20'
                         : 'bg-transparent'
                   )} />
 
@@ -1131,7 +967,7 @@ export default function EnquiryPage() {
                       {isUnread && (
                         <span className={cn(
                           'w-1.5 h-1.5 rounded-full shrink-0',
-                          isPriceUnlock
+                          isSourceAccent
                             ? 'bg-amber-500 shadow-[0_0_4px_rgba(245,158,11,0.5)]'
                             : 'bg-foreground/30'
                         )} />
@@ -1174,11 +1010,11 @@ export default function EnquiryPage() {
                     <div className="min-w-0 space-y-1.5">
                       <p className={cn(
                         'font-serif text-[15px] leading-tight tracking-tight truncate',
-                        isPriceUnlock ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'
+                        isSourceAccent ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'
                       )}>
                         {projectName}
                       </p>
-                      <TypePill isPriceUnlock={isPriceUnlock} />
+                      <TypePill source={enquiry.source} />
                     </div>
 
                     {/* Date */}
@@ -1193,7 +1029,7 @@ export default function EnquiryPage() {
 
                     {/* Status badge */}
                     <div className="space-y-1">
-                      <StatusBadge isRead={enquiry.is_read} isPriceUnlock={isPriceUnlock} />
+                      <StatusBadge isRead={enquiry.is_read} source={enquiry.source} />
                       <CallStatusBadge status={enquiry.call_status} />
                     </div>
 
@@ -1229,7 +1065,6 @@ export default function EnquiryPage() {
         marking={markingId}
         onCallAction={handleCallAction}
         callActionLoading={callActionLoading}
-        onReload={load}
       />
     </>
   )

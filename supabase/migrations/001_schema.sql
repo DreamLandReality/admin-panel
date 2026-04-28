@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS public.drafts (
   collection_data   JSONB       NULL DEFAULT '{}'::jsonb,
   project_name      TEXT        NULL,
   site_slug         TEXT        NULL,
-  last_active_page  TEXT        NULL DEFAULT 'home'::text,
+  last_active_page  TEXT        NULL,
   screenshot_url    TEXT        NULL,
   created_at        TIMESTAMPTZ NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NULL DEFAULT now(),

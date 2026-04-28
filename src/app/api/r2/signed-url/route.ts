@@ -6,7 +6,7 @@
  * Response: { url: string } | { error: string }
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { generateSignedUrl } from '@/lib/utils/r2-storage'
 import { createClient } from '@/lib/supabase/server'
 import { createRateLimiter } from '@/lib/rate-limit'
@@ -27,7 +27,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
     }
 
-    const body = await request.json()
+    let body: { objectKey?: unknown; expiresIn?: unknown; bucket?: unknown }
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
     const { objectKey, expiresIn, bucket } = body
 
     if (!objectKey || typeof objectKey !== 'string') {

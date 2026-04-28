@@ -3,6 +3,8 @@
 import React from 'react'
 import { MousePointerClick } from 'lucide-react'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { slugify } from '@/lib/utils/slugify'
 import { SchemaFieldRenderer } from './schema-field-renderer'
 import { EmptyState } from '@/components/dashboard/empty-state'
@@ -11,13 +13,13 @@ import type { Collection } from '@/types'
 // ─── CollectionEditorPanel ──────────────────────────────────────────────────
 
 export const CollectionEditorPanel = React.memo(function CollectionEditorPanel() {
-  const selectedCollectionItem = useWizardStore((s) => s.selectedCollectionItem)
+  const selectedCollectionItem = useUiStore((s) => s.selectedCollectionItem)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const collectionData = useWizardStore((s) => s.collectionData)
-  const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
-  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
-  const setDataUrl = useWizardStore((s) => s.setDataUrl)
-  const addPendingImage = useWizardStore((s) => s.addPendingImage)
+  const collectionData = useEditorStore((s) => s.collectionData)
+  const updateCollectionItem = useEditorStore((s) => s.updateCollectionItem)
+  const setBlobUrl = useEditorStore((s) => s.setBlobUrl)
+  const setDataUrl = useEditorStore((s) => s.setDataUrl)
+  const addPendingImage = useEditorStore((s) => s.addPendingImage)
   const projectName = useWizardStore((s) => s.projectName)
 
   if (!selectedCollectionItem) {

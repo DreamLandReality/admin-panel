@@ -7,7 +7,8 @@ import { IconPickerField } from './icon-picker'
 import { TextInput } from '@/components/forms'
 import { CollectionPickerWidget } from './collection-picker'
 import { StyleSection } from './style-controls'
-import { useWizardStore } from '@/stores/wizard-store'
+import { useDeployStore } from '@/stores/deploy-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { useContextualGroups } from '@/hooks/use-contextual-groups'
 import type { StyleControl } from '@/types'
 import type { ContextualGroup } from '@/lib/utils/contextual-group-manager'
@@ -43,7 +44,7 @@ export function SchemaFieldRenderer({
   sectionId,
   iframeRef,
 }: SchemaFieldRendererProps) {
-  const storeCollectionData = useWizardStore((s) => s.collectionData)
+  const storeCollectionData = useEditorStore((s) => s.collectionData)
   const collectionData = collectionDataProp ?? storeCollectionData
 
   // Use contextual grouping hook
@@ -221,7 +222,6 @@ interface ContextualGroupBlockProps {
 
 function ContextualGroupBlock({
   group,
-  properties,
   data,
   onChange,
   onImageUpload,
@@ -316,7 +316,6 @@ interface StaticSectionRendererProps {
 
 function StaticSectionRenderer({
   entries,
-  properties,
   data,
   onChange,
   onImageUpload,
@@ -505,7 +504,7 @@ function FieldDispatch({
   // ── Editability enforcement ──
   // Read editabilityMap from the store. If the field is marked non-editable,
   // render a locked read-only display instead of an interactive control.
-  const editabilityMap = useWizardStore((s) => s.editabilityMap)
+  const editabilityMap = useDeployStore((s) => s.editabilityMap)
   if (sectionId && editabilityMap[sectionId]?.[fieldPath] === false) {
     return <LockedFieldDisplay label={label} value={value} />
   }
@@ -1162,14 +1161,16 @@ function ObjectArrayField({
       <div className="space-y-2">
         {items.map((arrItem, i) => (
           <div key={i} className="bg-surface rounded-lg p-2.5 space-y-2 relative group/gitem border border-border-subtle hover:border-border-hover transition-colors">
-            <button
-              onClick={() => handleRemoveItem(i)}
-              className="absolute top-2 right-2 opacity-0 group-hover/gitem:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
+            {canRemove && (
+              <button
+                onClick={() => handleRemoveItem(i)}
+                className="absolute top-2 right-2 opacity-0 group-hover/gitem:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
             {(Object.entries(itemProps) as [string, any][]).map(([itemKey, itemSch]) => {
               if (itemSch.uiWidget === 'imageUpload') {
                 const imgValue = (arrItem[itemKey] as string) ?? ''
@@ -1205,12 +1206,14 @@ function ObjectArrayField({
             })}
           </div>
         ))}
-        <button
-          onClick={handleAddItem}
-          className="w-full py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground bg-white/5 hover:bg-white/10 transition-colors"
-        >
-          + Add Item
-        </button>
+        {canAdd && (
+          <button
+            onClick={handleAddItem}
+            className="w-full py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground bg-white/5 hover:bg-white/10 transition-colors"
+          >
+            + Add Item
+          </button>
+        )}
       </div>
     </div>
   )

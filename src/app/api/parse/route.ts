@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { buildParsePrompt } from '@/lib/ai/parse-prompt'
 import { buildToolSchema } from '@/lib/ai/schema-to-tool'
 import { createRateLimiter } from '@/lib/rate-limit'
+import { buildParsePrompt } from '@/prompts'
 import type { ManifestSection } from '@/types'
 
 const MAX_TEXT_LENGTH = 50_000
@@ -156,7 +156,16 @@ export async function POST(req: Request) {
     )
   }
 
-  const body = await req.json()
+  let body: {
+    templateId?: string
+    rawText?: string
+    provider?: 'claude' | 'gemini'
+  }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
   const { templateId, rawText, provider = 'claude' } = body as {
     templateId?: string
     rawText?: string
@@ -217,8 +226,8 @@ export async function POST(req: Request) {
           }
         }
 
-        const _sections: Record<string, { enabled: boolean }> = {}
-        sections.forEach((s) => { _sections[s.id] = { enabled: true } })
+        const _sections: Record<string, { enabled: boolean; showInNav?: boolean }> = {}
+        sections.forEach((s) => { _sections[s.id] = { enabled: true, showInNav: s.showInNav === true } })
 
         let populatedSections = 0
         for (const val of Object.values(aiData)) {

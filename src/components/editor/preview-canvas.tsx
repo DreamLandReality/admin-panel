@@ -2,10 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useDeployStore } from '@/stores/deploy-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { resolveAllSectionStyles } from '@/lib/utils/style-defaults'
 import { buildPageList } from '@/lib/utils/page-list'
 import { resolveReferences } from '@/lib/utils/collection-resolver'
 import { getIframeOrigin } from '@/lib/utils/iframe'
+import { getManifestDefaultPageId } from '@/lib/utils/manifest-contract'
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback'
 import { Spinner } from '@/components/primitives'
 import type { Collection } from '@/types'
@@ -43,23 +47,23 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   const iframeLoadFallbackRef = useRef<ReturnType<typeof setTimeout>>()
 
   // ── Zustand selectors: subscribe only to fields needed for render/effects ──
-  const viewport = useWizardStore((s) => s.viewport)
-  const sectionData = useWizardStore((s) => s.sectionData)
-  const collectionData = useWizardStore((s) => s.collectionData)
-  const sectionsRegistry = useWizardStore((s) => s.sectionsRegistry)
+  const viewport = useUiStore((s) => s.viewport)
+  const sectionData = useEditorStore((s) => s.sectionData)
+  const collectionData = useEditorStore((s) => s.collectionData)
+  const sectionsRegistry = useEditorStore((s) => s.sectionsRegistry)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const dataUrls = useWizardStore((s) => s.dataUrls)
-  const activePage = useWizardStore((s) => s.activePage)
-  const isViewOnly = useWizardStore((s) => s.isViewOnly)
+  const dataUrls = useEditorStore((s) => s.dataUrls)
+  const activePage = useUiStore((s) => s.activePage)
+  const isViewOnly = useUiStore((s) => s.isViewOnly)
 
   // Actions — stable references, never cause re-renders
-  const updateField = useWizardStore((s) => s.updateField)
-  const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
-  const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
-  const setSelection = useWizardStore((s) => s.setSelection)
-  const clearSelection = useWizardStore((s) => s.clearSelection)
-  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
-  const setDataUrl = useWizardStore((s) => s.setDataUrl)
+  const updateField = useEditorStore((s) => s.updateField)
+  const updateCollectionItem = useEditorStore((s) => s.updateCollectionItem)
+  const updateArrayItemField = useEditorStore((s) => s.updateArrayItemField)
+  const setSelection = useUiStore((s) => s.setSelection)
+  const clearSelection = useUiStore((s) => s.clearSelection)
+  const setBlobUrl = useEditorStore((s) => s.setBlobUrl)
+  const setDataUrl = useEditorStore((s) => s.setDataUrl)
 
   // No localhost fallback — empty preview URL shows an error state instead
   const effectivePreviewUrl = templatePreviewUrl
@@ -92,6 +96,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   function getPageUrl(pageId: string): string {
     if (!baseOrigin) return `${effectivePreviewUrl}?preview=true`
     const manifest = selectedTemplate?.manifest
+    const defaultPage = manifest?.pages?.find((p: any) => p.id === getManifestDefaultPageId(manifest))
 
     // Handle dynamic-parent pages: load the first child's detail page in the preview iframe.
     // If that first child is a new item (not in the original manifest baseline), route to the
@@ -117,7 +122,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
           return `${baseOrigin}${resolvedPath}?preview=true`
         }
       }
-      return `${baseOrigin}/?preview=true`
+      return `${baseOrigin}${defaultPage?.path ?? '/'}?preview=true`
     }
 
     // Check static pages in manifest
@@ -141,17 +146,18 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
       return `${baseOrigin}${resolvedPath}?preview=true`
     }
 
-    // Fallback for manifests without pages array
-    if (pageId === 'home') return `${baseOrigin}/?preview=true`
+    // Fallback for manifests without a matching pages entry
+    if (pageId === getManifestDefaultPageId(manifest)) return `${baseOrigin}${defaultPage?.path ?? '/'}?preview=true`
     return `${baseOrigin}/${pageId}?preview=true`
   }
 
   // Map an iframe pathname back to a pageId so the admin panel can sync activePage
   // when the runtime sends a navigate-request instead of navigating directly.
   function mapPathnameToPageId(pathname: string): string {
-    if (pathname === '/' || pathname === '') return 'home'
     const manifest = selectedTemplate?.manifest
-    if (!manifest) return 'home'
+    const defaultPageId = getManifestDefaultPageId(manifest)
+    if (pathname === '/' || pathname === '') return defaultPageId
+    if (!manifest) return defaultPageId
     // Static pages
     const staticPage = manifest.pages?.find((p: any) => !p.dynamic && p.path === pathname)
     if (staticPage) return staticPage.id
@@ -165,7 +171,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
       }
     }
     // Fallback: strip leading slash
-    return pathname.slice(1) || 'home'
+    return pathname.slice(1) || defaultPageId
   }
 
   const deviceWidth = VIEWPORT_WIDTHS[viewport] ?? 1440
@@ -198,8 +204,8 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
     const iframe = iframeRef.current
     if (!iframe?.contentWindow) return
 
-    const manifest = selectedTemplate?.manifest
     const resolvedData = { ...sectionData }
+    const manifest = selectedTemplate?.manifest
 
     // Inject resolved styles into each section (objects and arrays)
     if (manifest?.sections) {
@@ -310,13 +316,13 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
 
     // Replace any blob URLs with their data URL equivalents before sending cross-origin.
     // Blob URLs are origin-bound and can't be loaded by a cross-origin iframe.
-    const dataUrlMap = useWizardStore.getState().dataUrls
+    const dataUrlMap = useEditorStore.getState().dataUrls
     const finalData = Object.keys(dataUrlMap).length > 0
       ? deepReplaceBlobUrls(resolvedData, dataUrlMap)
       : resolvedData
 
     iframe.contentWindow.postMessage(
-      { type: 'full-update', data: finalData, sections: sectionsRegistry, editabilityMap: useWizardStore.getState().editabilityMap, isViewOnly, viewport: useWizardStore.getState().viewport },
+      { type: 'full-update', data: finalData, sections: sectionsRegistry, editabilityMap: useDeployStore.getState().editabilityMap, isViewOnly, viewport: useUiStore.getState().viewport },
       getIframeOrigin(effectivePreviewUrl)
     )
   }, [sectionData, collectionData, sectionsRegistry, selectedTemplate, activePage, effectivePreviewUrl, dataUrls])
@@ -327,7 +333,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   // sendFullUpdate reads from collectionData/sectionData items — NOT from sectionData["detail:core"]
   // (that's a dead slot). Both handleFileChange and the field-edited handler use this.
   const routeDetailPageUpdate = useCallback((field: string, value: any) => {
-    const { sectionData: sd, collectionData: cd } = useWizardStore.getState()
+    const { sectionData: sd, collectionData: cd } = useEditorStore.getState()
     const manifest = selectedTemplate?.manifest
     const pageList = buildPageList(manifest, sd, cd)
     const activeEntry = pageList.find((p: any) => p.id === activePage)
@@ -379,7 +385,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
           if (typeof msg.sectionId !== 'string' || typeof msg.fieldPath !== 'string') return
           // Handle page switching if needed
           if (msg.pageId && msg.pageId !== activePage) {
-            useWizardStore.getState().setActivePage(msg.pageId)
+            useUiStore.getState().setActivePage(msg.pageId)
             // Wait for page to load before setting selection
             setTimeout(() => {
               setSelection({
@@ -427,7 +433,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
             routeDetailPageUpdate(msg.field, msg.value)
           } else if (typeof msg.listName === 'string' && typeof msg.itemIndex === 'number') {
             // Inline edit of a field inside an array item
-            useWizardStore.getState().updateArrayItemField(
+            useEditorStore.getState().updateArrayItemField(
               msg.sectionId, msg.itemIndex, msg.field, msg.value, msg.listName
             )
           } else {
@@ -449,7 +455,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
           if (typeof msg.pathname !== 'string') break
           const targetPageId = mapPathnameToPageId(msg.pathname)
           if (targetPageId !== activePage) {
-            useWizardStore.getState().setActivePage(targetPageId)
+            useUiStore.getState().setActivePage(targetPageId)
             clearSelection()
           }
           break
@@ -464,7 +470,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   // Re-send data to iframe whenever sectionData/sectionsRegistry/dataUrls changes.
   // Optimization: if the change was a simple field edit (tracked via lastFieldUpdate),
   // send a lightweight field-update message instead of the heavy full-update.
-  const lastFieldUpdate = useWizardStore((s) => s.lastFieldUpdate)
+  const lastFieldUpdate = useDeployStore((s) => s.lastFieldUpdate)
   const prevFieldUpdateRef = useRef<typeof lastFieldUpdate>(null)
 
   useEffect(() => {
@@ -507,7 +513,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   }, [viewport, iframeReady, effectivePreviewUrl])
 
   // Re-sync iframe when switching back from data mode (data may have changed while iframe was hidden)
-  const panelMode = useWizardStore((s) => s.panelMode)
+  const panelMode = useUiStore((s) => s.panelMode)
   useEffect(() => {
     if (panelMode === 'layers' && iframeReady) {
       sendFullUpdate()
@@ -516,7 +522,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   }, [panelMode])
 
   // Scroll iframe to the selected section when selection changes (e.g. left panel click)
-  const selectedSectionId = useWizardStore((s) => s.selection.sectionId)
+  const selectedSectionId = useUiStore((s) => s.selection.sectionId)
   useEffect(() => {
     if (!selectedSectionId || !iframeReady) return
     // Resolve labels: prefix (dynamic-parent pages) → detail: prefix for iframe scroll

@@ -6,6 +6,7 @@
  *
  * Usage:
  *   node scripts/sync-template-manifest.mjs noir-luxury
+ *   node scripts/sync-template-manifest.mjs noir-luxury-template
  *
  * Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local
  */
@@ -45,7 +46,8 @@ if (!slug) {
 }
 
 // ── Load manifest from local file ────────────────────────────────────────────
-const manifestPath = resolve(__dirname, `../../templates-library/templates/${slug}/template.manifest.json`)
+const templateDir = slug.endsWith('-template') ? slug : `${slug}-template`
+const manifestPath = resolve(__dirname, `../../templates-library/templates/${templateDir}/template.manifest.json`)
 let manifest
 try {
   manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -54,7 +56,7 @@ try {
   process.exit(1)
 }
 
-console.log(`Loaded manifest for "${slug}" — ${manifest.sections?.length ?? 0} sections`)
+console.log(`Loaded manifest for "${slug}" from "${templateDir}" — ${manifest.sections?.length ?? 0} sections`)
 
 // ── Update Supabase ───────────────────────────────────────────────────────────
 const url = `${SUPABASE_URL}/rest/v1/templates?slug=eq.${encodeURIComponent(slug)}`

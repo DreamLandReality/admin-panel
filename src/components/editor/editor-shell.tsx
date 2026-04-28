@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
 import { extractDraftThumbnail } from '@/lib/utils/draft-thumbnail'
 import { Button } from '@/components/ui/button'
@@ -11,7 +13,8 @@ import { Spinner, Heading } from '@/components/primitives'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
 import { DeleteSiteAction } from '@/components/shared/delete-site-action'
 import { useDeployTransitionStore } from '@/stores/deploy-transition-store'
-import { getIframeOrigin } from '@/lib/utils/iframe'
+import { deploymentService } from '@/services/deployment'
+import { draftService } from '@/services/draft'
 import { PreviewCanvas } from './preview-canvas'
 import { RightPanel } from './right-panel'
 import { LeftPanel } from './left-panel'
@@ -24,17 +27,15 @@ export function EditorShell() {
 
   // ── Zustand selectors: subscribe only to the fields each render path needs ──
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const isDirty = useWizardStore((s) => s.isDirty)
-  const viewport = useWizardStore((s) => s.viewport)
-  const panelMode = useWizardStore((s) => s.panelMode)
+  const isDirty = useEditorStore((s) => s.isDirty)
+  const panelMode = useUiStore((s) => s.panelMode)
   const projectName = useWizardStore((s) => s.projectName)
   const draftId = useWizardStore((s) => s.draftId)
   const deploymentId = useWizardStore((s) => s.deploymentId)
   const deploymentStatus = useWizardStore((s) => s.deploymentStatus)
-  const isViewOnly = useWizardStore((s) => s.isViewOnly)
+  const isViewOnly = useUiStore((s) => s.isViewOnly)
 
   // Actions — stable references, never cause re-renders
-  const setViewport = useWizardStore((s) => s.setViewport)
   const setStep = useWizardStore((s) => s.setStep)
   const setDraftId = useWizardStore((s) => s.setDraftId)
 
@@ -48,7 +49,7 @@ export function EditorShell() {
   // Revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
-      const { blobUrls } = useWizardStore.getState()
+      const { blobUrls } = useEditorStore.getState()
       Object.values(blobUrls).forEach((url) => {
         if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
       })
@@ -92,7 +93,7 @@ export function EditorShell() {
   function handleDiscard() {
     setShowBackModal(false)
     setIsExiting(true)
-    const { blobUrls, pendingImages: pending } = useWizardStore.getState()
+    const { blobUrls, pendingImages: pending } = useEditorStore.getState()
     Object.values(blobUrls).forEach((url) => {
       if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
     })
@@ -104,7 +105,7 @@ export function EditorShell() {
         useWizardStore.getState().reset()
         router.push('/')
       } else if (draftId) {
-        useWizardStore.setState({ isDirty: false, pendingImages: {}, blobUrls: {} })
+        useEditorStore.getState().setEditorState({ isDirty: false, pendingImages: {}, blobUrls: {} })
         setStep(2)
       } else {
         useWizardStore.getState().reset()
@@ -115,7 +116,7 @@ export function EditorShell() {
   // ── Shared upload helper ─────────────────────────────────────────────────────
 
   async function uploadAndResolve() {
-    const store = useWizardStore.getState()
+    const store = useEditorStore.getState()
     const { urlMap, failed } = await uploadPendingImages(store.pendingImages)
     if (failed.length > 0) {
       console.warn(`[editor] ${failed.length} image(s) failed to upload — draft may be missing images.`)
@@ -123,7 +124,7 @@ export function EditorShell() {
     const finalSectionData = replaceBlobUrls(store.sectionData, urlMap)
     const finalCollectionData = replaceBlobUrls(store.collectionData, urlMap)
     if (urlMap.size > 0) {
-      useWizardStore.setState({
+      useEditorStore.getState().setEditorState({
         sectionData: finalSectionData,
         collectionData: finalCollectionData,
         pendingImages: {},
@@ -145,40 +146,32 @@ export function EditorShell() {
         selectedTemplate?.preview_url ??
         selectedTemplate?.config?.previewUrl ??
         null
-      const { rawText, sectionsRegistry, activePage } = useWizardStore.getState()
-      const res = await fetch('/api/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_name: projectName,
-          template_slug: selectedTemplate?.slug ?? '',
-          template_id: selectedTemplate?.id ?? null,
-          current_step: 3,
-          raw_text: rawText,
-          section_data: finalSectionData,
-          sections_registry: sectionsRegistry,
-          collection_data: finalCollectionData,
-          last_active_page: activePage,
-          screenshot_url,
-        }),
+      const { rawText } = useWizardStore.getState()
+      const { sectionsRegistry } = useEditorStore.getState()
+      const { activePage } = useUiStore.getState()
+      const result = await draftService.save({
+        projectName,
+        templateSlug: selectedTemplate?.slug ?? '',
+        templateId: selectedTemplate?.id ?? null,
+        currentStep: 3,
+        rawText,
+        sectionData: finalSectionData,
+        sectionsRegistry,
+        collectionData: finalCollectionData,
+        lastActivePage: activePage,
+        screenshotUrl: screenshot_url,
       })
-      const data = await res.json()
-      if (res.ok && data.data?.id) {
-        setDraftId(data.data.id)
-        useWizardStore.setState({ isDirty: false })
+      if (result.ok) {
+        setDraftId(result.data.id)
+        useEditorStore.getState().setEditorState({ isDirty: false })
         toast.success('Draft saved')
-        // Fire-and-forget: generate real content screenshot async (non-blocking)
-        void fetch('/api/screenshot/draft', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ draft_id: data.data.id }),
-        }).catch(() => { /* non-fatal */ })
+        void draftService.generateScreenshot(result.data.id)
       } else {
-        toast.error(data?.error ?? 'Draft save failed. Please try again.')
+        toast.error(result.error.message)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[SaveDraft] Failed:', err)
-      toast.error(err?.message ?? 'Draft save failed. Please try again.')
+      toast.error(err instanceof Error ? err.message : 'Draft save failed. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -192,27 +185,25 @@ export function EditorShell() {
     try {
       const { finalSectionData, finalCollectionData } = await uploadAndResolve()
       const site_data = {
-        _sections: useWizardStore.getState().sectionsRegistry,
+        _sections: useEditorStore.getState().sectionsRegistry,
         ...finalSectionData,
         ...(Object.keys(finalCollectionData).length > 0
           ? { _collections: finalCollectionData }
           : {}),
       }
-      const res = await fetch(`/api/deployments/${deploymentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_data, action: 'save' }),
+      const result = await deploymentService.update(deploymentId, {
+        siteData: site_data,
+        action: 'save',
       })
-      if (res.ok) {
-        useWizardStore.setState({ isDirty: false })
+      if (result.ok) {
+        useEditorStore.getState().setEditorState({ isDirty: false })
         toast.success('Changes saved')
       } else {
-        const errData = await res.json().catch(() => ({}))
-        toast.error(errData?.error ?? 'Failed to save changes.')
+        toast.error(result.error.message)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[SaveChanges] Failed:', err)
-      toast.error(err?.message ?? 'Failed to save changes. Please try again.')
+      toast.error(err instanceof Error ? err.message : 'Failed to save changes. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -335,7 +326,10 @@ export function EditorShell() {
 
         {panelMode === 'layers' ? (
           <>
-            <PreviewCanvas templatePreviewUrl={previewUrl} iframeRef={iframeRef} />
+            <PreviewCanvas
+              templatePreviewUrl={previewUrl}
+              iframeRef={iframeRef}
+            />
             {!isViewOnly && (
               <div className="w-70 border-l border-white/10 flex-shrink-0 bg-editor-surface overflow-hidden flex flex-col">
                 <RightPanel iframeRef={iframeRef} />

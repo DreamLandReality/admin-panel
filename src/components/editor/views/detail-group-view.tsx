@@ -2,6 +2,8 @@
 
 import { useRef } from 'react'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { usePageList } from '@/hooks/use-page-list'
 import { postToIframe } from '@/lib/utils/iframe'
 import { slugify } from '@/lib/utils/slugify'
@@ -12,15 +14,15 @@ import type { ManifestSection, FieldGroup } from '@/types'
 // ─── DetailGroupView ─────────────────────────────────────────────────────────
 
 export function DetailGroupView({ groupId, iframeRef }: { groupId: string; iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const sectionData = useWizardStore((s) => s.sectionData)
-  const collectionData = useWizardStore((s) => s.collectionData)
-  const activePage = useWizardStore((s) => s.activePage)
+  const sectionData = useEditorStore((s) => s.sectionData)
+  const collectionData = useEditorStore((s) => s.collectionData)
+  const activePage = useUiStore((s) => s.activePage)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
-  const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
-  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
-  const setDataUrl = useWizardStore((s) => s.setDataUrl)
-  const addPendingImage = useWizardStore((s) => s.addPendingImage)
+  const updateArrayItemField = useEditorStore((s) => s.updateArrayItemField)
+  const updateCollectionItem = useEditorStore((s) => s.updateCollectionItem)
+  const setBlobUrl = useEditorStore((s) => s.setBlobUrl)
+  const setDataUrl = useEditorStore((s) => s.setDataUrl)
+  const addPendingImage = useEditorStore((s) => s.addPendingImage)
   const projectName = useWizardStore((s) => s.projectName)
 
   const manifest = selectedTemplate?.manifest

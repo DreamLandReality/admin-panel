@@ -23,6 +23,8 @@ import { useTheme } from 'next-themes'
 import { createClient } from '@/lib/supabase/client'
 import { Heading } from '@/components/primitives'
 import { Button } from '@/components/ui/button'
+import { getAppConfig } from '@/services/config'
+import { getEnquirySummary } from '@/services/enquiry'
 
 const NAV_ITEMS = [
     { icon: LayoutDashboard, label: 'Sites', href: '/', match: 'exact', group: 'workspace' },
@@ -119,9 +121,10 @@ export function Sidebar() {
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user?.email) setUserEmail(user.email)
         })
-        fetch('/api/config')
-            .then((r) => r.json())
-            .then((config) => {
+        void getAppConfig()
+            .then((result) => {
+                if (!result.ok) return
+                const config = result.data
                 const providers = new Set<AiProvider>()
                 if (config.isAiConfigured) providers.add('claude')
                 if (config.isGeminiConfigured) providers.add('gemini')
@@ -132,9 +135,8 @@ export function Sidebar() {
                 }
             })
             .catch(() => { })
-        fetch('/api/enquiries')
-            .then((r) => r.json())
-            .then((json) => { if (typeof json.unreadCount === 'number') setUnreadEnquiries(json.unreadCount) })
+        void getEnquirySummary()
+            .then((result) => { if (result.ok) setUnreadEnquiries(result.data.unreadCount) })
             .catch(() => { })
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])

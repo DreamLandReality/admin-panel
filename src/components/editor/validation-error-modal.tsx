@@ -1,5 +1,6 @@
 'use client'
 
+import { ShieldAlert } from 'lucide-react'
 import { BaseModal } from '@/components/ui/base-modal'
 import { Button } from '@/components/ui/button'
 import { IconContainer, Divider, Heading } from '@/components/primitives'
@@ -60,6 +61,11 @@ const typeConfig: Record<
         <polyline points="21 15 16 10 5 21" />
       </svg>
     ),
+  },
+  invalid_gate: {
+    label: 'Gate config',
+    color: 'text-error',
+    icon: <ShieldAlert size={13} strokeWidth={2} />,
   },
 }
 

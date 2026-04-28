@@ -46,3 +46,5 @@ that match your requirements. Have a great day!"
 | `{{property_name}}` | Name of the property they enquired about |
 
 > Copy this prompt exactly into the ElevenLabs dashboard → Conversational AI → your agent.
+
+Runtime source of truth for the app: `src/prompts/voice/agent-prompt.md` and `src/prompts/voice/property-call.ts`.

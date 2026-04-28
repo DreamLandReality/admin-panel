@@ -3,12 +3,20 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { postToIframe } from '@/lib/utils/iframe'
 import { slugify } from '@/lib/utils/slugify'
 import { StyleSection } from '../style-controls'
 import { SchemaFieldRenderer } from '../schema-field-renderer'
+import { PanelToggle } from '../panel-inputs'
 import { PanelHeader } from '@/components/layout/PanelHeader'
+import { canShowSectionInNav } from '@/lib/utils/manifest-contract'
 import type { ManifestSection } from '@/types'
+
+function canShowNavbarControl(section: ManifestSection | undefined, manifest: any): section is ManifestSection {
+  return canShowSectionInNav(section, manifest)
+}
 
 /** Deep-walk data and replace blob URL strings with their data URL equivalents */
 function resolveBlobUrls(data: any, map: Record<string, string>): any {
@@ -23,22 +31,24 @@ function resolveBlobUrls(data: any, map: Record<string, string>): any {
 // ─── SectionFieldsView ──────────────────────────────────────────────────────
 
 export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const sectionId = useWizardStore((s) => s.selection.sectionId)
-  const sectionData = useWizardStore((s) => s.sectionData)
-  const collectionData = useWizardStore((s) => s.collectionData)
+  const sectionId = useUiStore((s) => s.selection.sectionId)
+  const sectionData = useEditorStore((s) => s.sectionData)
+  const collectionData = useEditorStore((s) => s.collectionData)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const updateField = useWizardStore((s) => s.updateField)
-  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
-  const setDataUrl = useWizardStore((s) => s.setDataUrl)
-  const addPendingImage = useWizardStore((s) => s.addPendingImage)
+  const updateField = useEditorStore((s) => s.updateField)
+  const sectionsRegistry = useEditorStore((s) => s.sectionsRegistry)
+  const toggleSectionNav = useEditorStore((s) => s.toggleSectionNav)
+  const setBlobUrl = useEditorStore((s) => s.setBlobUrl)
+  const setDataUrl = useEditorStore((s) => s.setDataUrl)
+  const addPendingImage = useEditorStore((s) => s.addPendingImage)
   const projectName = useWizardStore((s) => s.projectName)
-  const addArrayItem = useWizardStore((s) => s.addArrayItem)
-  const removeArrayItem = useWizardStore((s) => s.removeArrayItem)
-  const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
+  const addArrayItem = useEditorStore((s) => s.addArrayItem)
+  const removeArrayItem = useEditorStore((s) => s.removeArrayItem)
+  const updateArrayItemField = useEditorStore((s) => s.updateArrayItemField)
 
   const [expandedItem, setExpandedItem] = useState<number | null>(null)
-  const selectionItemIndex = useWizardStore((s) => s.selection.itemIndex)
-  const selectionField = useWizardStore((s) => s.selection.field)
+  const selectionItemIndex = useUiStore((s) => s.selection.itemIndex)
+  const selectionField = useUiStore((s) => s.selection.field)
 
   // Auto-expand array item when clicked in the preview iframe
   useEffect(() => {
@@ -61,7 +71,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
     // Resolve known blob→data URL mappings before sending. If any unresolved blob URLs
     // remain (FileReader still pending), skip — sendFullUpdate handles it after conversion.
     let resolved = value
-    const dataUrlMap = useWizardStore.getState().dataUrls
+    const dataUrlMap = useEditorStore.getState().dataUrls
     if (Object.keys(dataUrlMap).length > 0) {
       resolved = resolveBlobUrls(value, dataUrlMap)
     }
@@ -111,6 +121,21 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
   // ── Style controls ──
   const styleDef = section?.styleControls
   const sectionStyleControls = styleDef?.section ?? []
+  const showNavbarControl = canShowNavbarControl(section, manifest)
+  const showInNav = sectionsRegistry[sectionId]?.showInNav ?? (section?.showInNav === true)
+
+  function renderNavbarControl() {
+    if (!showNavbarControl) return null
+    return (
+      <div className="border-b border-white/5 px-4 py-3">
+        <PanelToggle
+          label="Show in navbar"
+          value={showInNav}
+          onChange={(value) => toggleSectionNav(sectionId!, value)}
+        />
+      </div>
+    )
+  }
 
   function renderStyleControls() {
     if (sectionStyleControls.length === 0) return null
@@ -158,6 +183,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
     return (
       <div>
         <PanelHeader title={section?.name ?? sectionId ?? ''} sticky />
+        {renderNavbarControl()}
         <div className="px-2 pb-4 pt-3">
           {/* Render object-level fields above the items list */}
           {objectFieldEntries.length > 0 && (
@@ -248,6 +274,7 @@ export function SectionFieldsView({ iframeRef }: { iframeRef: React.RefObject<HT
   return (
     <div>
       <PanelHeader title={section?.name ?? sectionId ?? ''} sticky />
+      {renderNavbarControl()}
       <div className="px-4 space-y-3 pb-4 pt-3">
         <SchemaFieldRenderer
           properties={schema?.properties}

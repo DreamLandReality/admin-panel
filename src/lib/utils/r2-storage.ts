@@ -128,6 +128,19 @@ export function getR2PublicUrl(objectKey: string): string {
 }
 
 /**
+ * Build the immutable shared-defaults URL used by production templates.
+ *
+ * Shared defaults are general-mode assets: all templates reference
+ * `shared-defaults/{filename}` rather than per-template subfolders. Do not
+ * overwrite an existing shared-default file after customer sites are deployed;
+ * use a new filename for new defaults.
+ */
+export function getSharedDefaultUrl(filename: string): string {
+  const normalized = filename.replace(/^\/+/, '')
+  return getR2PublicUrl(`shared-defaults/${normalized}`)
+}
+
+/**
  * Generate a signed URL for a template preview screenshot
  *
  * @param templateSlug - The template slug (e.g., "minimal-luxury")

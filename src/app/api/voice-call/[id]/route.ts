@@ -1,7 +1,26 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { env } from '@/lib/env'
+
+type VoiceRetrySubmission = {
+  phone: string | null
+  name: string | null
+  deployment_slug: string
+  call_status: string
+  deployments:
+    | { project_name?: string | null }
+    | { project_name?: string | null }[]
+    | null
+}
+
+function getDeploymentProjectName(submission: VoiceRetrySubmission): string {
+  const deployment = Array.isArray(submission.deployments)
+    ? submission.deployments[0]
+    : submission.deployments
+
+  return deployment?.project_name ?? submission.deployment_slug
+}
 
 /**
  * PATCH /api/voice-call/[id]
@@ -20,8 +39,13 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const body = await req.json()
-  const { action, conversation_id } = body
+  let body: { action?: unknown }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+  const { action } = body
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
   if (action === 'cancel') {
@@ -38,14 +62,15 @@ export async function PATCH(
 
   if (action === 'retry') {
     // Fetch submission to get phone + context
-    const { data: sub } = await supabase
+    const { data: rawSub } = await supabase
       .from('form_submissions')
       .select('phone, name, deployment_slug, deployments(project_name), call_status')
       .eq('id', id)
       .single()
+    const sub = rawSub as VoiceRetrySubmission | null
 
-    if (!sub || !sub.phone) {
-      return NextResponse.json({ error: 'No phone number' }, { status: 400 })
+    if (!sub) {
+      return NextResponse.json({ error: 'Submission not found' }, { status: 404 })
     }
 
     // Only retry if in a retryable state
@@ -53,28 +78,38 @@ export async function PATCH(
       return NextResponse.json({ error: 'Not retryable in current state' }, { status: 400 })
     }
 
-    // Schedule via QStash with 60s delay (near-immediate retry)
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
-    const qstashToken = process.env.QSTASH_TOKEN
+    const isDevMode = process.env.VOICE_AGENT_DEV_MODE === 'true'
+    if (!isDevMode && !sub.phone) {
+      return NextResponse.json({ error: 'No phone number' }, { status: 400 })
+    }
+
+    // Schedule via QStash. Dev mode has no delay and the trigger calls ELEVENLABS_DEV_TO_NUMBER.
+    const appUrl = process.env.ADMIN_PANEL_URL
+    const qstashToken = env.QSTASH_TOKEN
     if (!appUrl || !qstashToken) {
       return NextResponse.json({ error: 'Voice agent not configured' }, { status: 500 })
     }
 
     const triggerUrl = `${appUrl}/api/voice-call/trigger`
+    const retryDelaySeconds = isDevMode ? 0 : 60
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${qstashToken}`,
+      'Content-Type': 'application/json',
+      'Upstash-Retries': '2',
+    }
+    if (retryDelaySeconds > 0) {
+      headers['Upstash-Delay'] = `${retryDelaySeconds}s`
+    }
+
     const qstashRes = await fetch(`https://qstash.upstash.io/v1/publish/${triggerUrl}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${qstashToken}`,
-        'Content-Type': 'application/json',
-        'Upstash-Delay': '60s',
-        'Upstash-Retries': '2',
-      },
+      headers,
       body: JSON.stringify({
         submission_id: id,
         phone: sub.phone,
         name: sub.name,
         deployment_slug: sub.deployment_slug,
-        property_name: ((sub as any).deployments?.project_name as string) ?? sub.deployment_slug,
+        property_name: getDeploymentProjectName(sub),
       }),
     })
 
@@ -89,55 +124,12 @@ export async function PATCH(
       .update({
         call_status: 'scheduled',
         call_scheduled_at: new Date().toISOString(),
-        call_scheduled_for: new Date(Date.now() + 60_000).toISOString(),
+        call_scheduled_for: new Date(Date.now() + retryDelaySeconds * 1000).toISOString(),
       })
       .eq('id', id)
 
     return NextResponse.json({ status: 'scheduled' })
   }
 
-  if (action === 'clear_signed_url') {
-    const { error } = await supabase
-      .from('form_submissions')
-      .update({ call_signed_url: null })
-      .eq('id', id)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    return NextResponse.json({ status: 'ok' })
-  }
-
-  if (action === 'complete_dev_call') {
-    const { error } = await supabase
-      .from('form_submissions')
-      .update({
-        call_status: 'completed',
-        call_completed_at: new Date().toISOString(),
-        call_signed_url: null,
-      })
-      .eq('id', id)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    return NextResponse.json({ status: 'completed' })
-  }
-
-  if (action === 'save_conv_id') {
-    if (!conversation_id || typeof conversation_id !== 'string') {
-      return NextResponse.json({ error: 'Missing conversation_id' }, { status: 400 })
-    }
-    const { error } = await supabase
-      .from('form_submissions')
-      .update({ elevenlabs_conversation_id: conversation_id })
-      .eq('id', id)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    return NextResponse.json({ status: 'ok' })
-  }
-
-  return NextResponse.json({ error: 'Invalid action. Use "retry", "cancel", or "clear_signed_url".' }, { status: 400 })
+  return NextResponse.json({ error: 'Invalid action. Use "retry" or "cancel".' }, { status: 400 })
 }

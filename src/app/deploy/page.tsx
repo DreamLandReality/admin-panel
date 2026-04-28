@@ -1,13 +1,17 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { useDeployTransitionStore } from '@/stores/deploy-transition-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
+import { validateDeployReady } from '@/lib/deploy/validators'
+import { startDeployment } from '@/services/deploy'
+import { deploymentService } from '@/services/deployment'
 import { DEPLOY_STEP_LABELS } from '@/types'
-import type { DeployStepState, DeployStepId, DeployEvent } from '@/types'
+import type { DeployStepState, DeployStepId, DeployEvent, SiteData } from '@/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +47,17 @@ function previewSlug(name: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 50) || 'property-site'
+}
+
+function getCurrentSiteData(): SiteData {
+  const store = useEditorStore.getState()
+  return {
+    _sections: store.sectionsRegistry,
+    ...store.sectionData,
+    ...(Object.keys(store.collectionData).length > 0
+      ? { _collections: store.collectionData }
+      : {}),
+  }
 }
 
 // ── Step dot ──────────────────────────────────────────────────────────────────
@@ -148,7 +163,16 @@ export default function DeployPage() {
   const siteSlug = previewSlug(projectName ?? '')
   const activeStep = steps.find((s) => s.status === 'running') ?? steps.find((s) => s.status === 'error')
   const doneCount = steps.filter((s) => s.status === 'done').length
-  const hasTemplateImages = JSON.stringify(useWizardStore.getState().sectionData).includes('/templates/')
+  const deployWarnings = useMemo(() => {
+    if (!selectedTemplate) return []
+    return validateDeployReady(
+      getCurrentSiteData(),
+      selectedTemplate.manifest,
+      projectName ?? ''
+    ).warnings
+  }, [selectedTemplate, projectName])
+  const productionReadinessWarnings = deployWarnings.filter((warning) => warning.startsWith('Production readiness:'))
+  const gateAssetWarnings = deployWarnings.filter((warning) => warning.includes('download_unavailable'))
 
   useEffect(() => {
     useDeployTransitionStore.getState().setTransitioning(false)
@@ -156,17 +180,14 @@ export default function DeployPage() {
 
     // Mount-time guard: if a deployment is in progress, redirect straight to its
     // progress page. If it looks stuck (zombie), auto-cancel it so the user can retry.
-    fetch('/api/deployments/active')
-      .then((r) => r.json())
-      .then(({ deployment, isLikelyStuck }) => {
+    deploymentService.getActive()
+      .then((result) => {
+        if (!result.ok) return
+        const { deployment, isLikelyStuck } = result.data
         if (!deployment) return
         if (isLikelyStuck) {
           // Zombie — silently cancel it and stay on confirm so user can retry
-          fetch(`/api/deployments/${deployment.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'cancel', site_data: {} }),
-          }).catch(() => {})
+          deploymentService.update(deployment.id, { action: 'cancel', siteData: {} as SiteData }).catch(() => {})
         } else {
           // Genuine in-progress deployment — take the user straight to it
           router.replace(`/deployments/${deployment.id}/progress`)
@@ -189,10 +210,9 @@ export default function DeployPage() {
     setIsPolling(true)
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/deployments/${deployId}`)
-        if (!res.ok) return
-        const json = await res.json()
-        const dep = json.data?.deployment
+        const result = await deploymentService.get(deployId)
+        if (!result.ok) return
+        const dep = result.data.deployment
         if (!dep) return
         if (dep.status === 'live') {
           setSiteUrl(dep.stable_url ?? dep.live_url)
@@ -266,42 +286,36 @@ export default function DeployPage() {
     setIsDeployPending(true)
     setView('preparing')
     try {
-      const store = useWizardStore.getState()
-      const { urlMap, failed } = await uploadPendingImages(store.pendingImages)
+      const editorStore = useEditorStore.getState()
+      const wizardStore = useWizardStore.getState()
+      const { urlMap, failed } = await uploadPendingImages(editorStore.pendingImages)
       if (failed.length > 0) {
         throw new Error(`${failed.length} image(s) failed to upload. Please try again.`)
       }
-      const finalSectionData = replaceBlobUrls(store.sectionData, urlMap)
-      const finalCollectionData = replaceBlobUrls(store.collectionData, urlMap)
+      const finalSectionData = replaceBlobUrls(editorStore.sectionData, urlMap)
+      const finalCollectionData = replaceBlobUrls(editorStore.collectionData, urlMap)
 
       const site_data = {
-        _sections: store.sectionsRegistry,
+        _sections: editorStore.sectionsRegistry,
         ...finalSectionData,
         ...(Object.keys(finalCollectionData).length > 0 ? { _collections: finalCollectionData } : {}),
       }
 
-      const res = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectName: store.projectName ?? '',
-          templateId: store.selectedTemplate?.id ?? '',
-          siteData: site_data,
-          ...(store.deploymentId ? { deploymentId: store.deploymentId } : {}),
-        }),
+      const deployResult = await startDeployment({
+        projectName: wizardStore.projectName ?? '',
+        templateId: wizardStore.selectedTemplate?.id ?? '',
+        siteData: site_data,
+        deploymentId: wizardStore.deploymentId,
       })
 
-      const json = await res.json().catch(() => ({ error: 'Unknown error' }))
-
-      if (!res.ok) {
-        if (res.status === 429) {
+      if (!deployResult.ok) {
+        if (deployResult.error.status === 429) {
           // Still rate-limited (very rare now with zombie auto-cancel) —
           // redirect to the active deployment's progress page
           try {
-            const activeRes = await fetch('/api/deployments/active')
-            const activeData = await activeRes.json()
-            if (activeData.deployment) {
-              router.replace(`/deployments/${activeData.deployment.id}/progress`)
+            const activeResult = await deploymentService.getActive()
+            if (activeResult.ok && activeResult.data.deployment) {
+              router.replace(`/deployments/${activeResult.data.deployment.id}/progress`)
               setIsDeployPending(false)
               return
             }
@@ -312,22 +326,22 @@ export default function DeployPage() {
           setIsDeployPending(false)
           return
         }
-        setErrorMsg(json.error ?? 'Deployment failed. Please try again.')
+        setErrorMsg(deployResult.error.message)
         setView('failed')
         setIsDeployPending(false)
         useWizardStore.getState().reset()
         return
       }
 
-      const newDeployId = json.deploymentId
+      const newDeployId = deployResult.data.deploymentId
       setFinalDeploymentId(newDeployId)
       setSteps(makeSteps(isRedeploy))
       setView('deploying')
       setIsDeployPending(false)
       useWizardStore.getState().reset()
       await connectSSE(newDeployId)
-    } catch (err: any) {
-      setErrorMsg(err.message ?? 'Unexpected error. Please try again.')
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Unexpected error. Please try again.')
       setView('failed')
       setIsDeployPending(false)
       useWizardStore.getState().reset()
@@ -409,11 +423,33 @@ export default function DeployPage() {
                 </div>
               </div>
 
-              {hasTemplateImages && (
-                <div className="bg-amber-400/[0.06] border border-amber-400/15 rounded-lg px-3 py-2.5">
-                  <p className="text-xs text-amber-400/70 leading-relaxed">
-                    Some images still use template defaults. Consider uploading custom images before deploying.
+              {productionReadinessWarnings.length > 0 && (
+                <div className="bg-amber-400/[0.06] border border-amber-400/15 rounded-lg px-3 py-2.5 space-y-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80">
+                    Production readiness
                   </p>
+                  <ul className="space-y-1.5">
+                    {productionReadinessWarnings.map((warning, index) => (
+                      <li key={`${warning}-${index}`} className="text-xs text-amber-400/70 leading-relaxed">
+                        {warning.replace(/^Production readiness:\s*/, '')}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {gateAssetWarnings.length > 0 && (
+                <div className="bg-amber-400/[0.06] border border-amber-400/15 rounded-lg px-3 py-2.5 space-y-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80">
+                    Gate asset warning
+                  </p>
+                  <ul className="space-y-1.5">
+                    {gateAssetWarnings.map((warning, index) => (
+                      <li key={`${warning}-${index}`} className="text-xs text-amber-400/70 leading-relaxed">
+                        {warning}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

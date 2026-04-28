@@ -123,7 +123,7 @@ export class DependencyAnalyzer {
     this.calculateDepths(nodes, roots)
 
     // Generate topological order
-    const topologicalOrder = this.topologicalSort(nodes, edges)
+    const topologicalOrder = this.topologicalSort(nodes)
 
     return {
       nodes,
@@ -164,10 +164,7 @@ export class DependencyAnalyzer {
   /**
    * Perform topological sort on the dependency graph
    */
-  private topologicalSort(
-    nodes: Map<string, FieldNode>,
-    edges: Map<string, DependencyEdge[]>
-  ): string[] {
+  private topologicalSort(nodes: Map<string, FieldNode>): string[] {
     const result: string[] = []
     const visited = new Set<string>()
     const visiting = new Set<string>()

@@ -5,6 +5,91 @@
   ],
   "rules": {
     "@typescript-eslint/no-explicit-any": "warn",
-    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
-  }
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
+    ],
+    "@typescript-eslint/consistent-type-imports": [
+      "error",
+      { "prefer": "type-imports", "fixStyle": "inline-type-imports" }
+    ],
+    "prefer-const": "error",
+    "no-var": "error",
+    "no-console": ["warn", { "allow": ["warn", "error"] }]
+  },
+  "overrides": [
+    {
+      "files": ["src/components/atoms/**/*.{ts,tsx}"],
+      "rules": {
+        "max-lines": ["warn", { "max": 50, "skipBlankLines": true, "skipComments": true }]
+      }
+    },
+    {
+      "files": ["src/components/molecules/**/*.{ts,tsx}"],
+      "rules": {
+        "max-lines": ["warn", { "max": 80, "skipBlankLines": true, "skipComments": true }]
+      }
+    },
+    {
+      "files": ["src/components/organisms/**/*.{ts,tsx}"],
+      "rules": {
+        "max-lines": ["warn", { "max": 150, "skipBlankLines": true, "skipComments": true }]
+      }
+    },
+    {
+      "files": ["src/modules/**/*.{ts,tsx}"],
+      "rules": {
+        "max-lines": ["warn", { "max": 200, "skipBlankLines": true, "skipComments": true }]
+      }
+    },
+    {
+      "files": ["src/hooks/**/*.ts"],
+      "rules": {
+        "max-lines": ["warn", { "max": 40, "skipBlankLines": true, "skipComments": true }]
+      }
+    },
+    {
+      "files": ["src/components/**/*.tsx", "src/modules/**/*.tsx"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "fetch",
+            "message": "fetch() in components violates the service layer rule. Use component → hook → service → API instead."
+          }
+        ],
+        "no-restricted-syntax": [
+          "warn",
+          {
+            "selector": "JSXOpeningElement[name.name='svg']",
+            "message": "Inline <svg> is legacy UI debt. Import the icon from lucide-react when touching this component."
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/services/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "error",
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXOpeningElement[name.name='svg']",
+            "message": "Inline <svg> is banned. Import the icon from lucide-react instead."
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/api/**/*.ts",
+        "src/lib/**/*.ts",
+        "src/services/**/*.ts",
+        "scripts/**/*.ts"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
 }

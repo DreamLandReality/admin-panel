@@ -69,7 +69,6 @@ export class FieldVisibilityController {
     const affectedFields: string[] = []
 
     // Update field value
-    const oldValue = state.fieldValues[fieldKey]
     state.fieldValues[fieldKey] = newValue
 
     // Find all fields that depend on this field

@@ -1,6 +1,8 @@
 'use client'
 
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { postToIframe } from '@/lib/utils/iframe'
 import { SchemaFieldRenderer } from '../schema-field-renderer'
 import { PanelHeader } from '@/components/layout/PanelHeader'
@@ -9,10 +11,10 @@ import type { ManifestSection } from '@/types'
 // ─── SharedLabelsView ─────────────────────────────────────────────────────────
 
 export function SharedLabelsView({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const selection = useWizardStore((s) => s.selection)
-  const sectionData = useWizardStore((s) => s.sectionData)
+  const selection = useUiStore((s) => s.selection)
+  const sectionData = useEditorStore((s) => s.sectionData)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const updateField = useWizardStore((s) => s.updateField)
+  const updateField = useEditorStore((s) => s.updateField)
   const { sectionId } = selection
   if (!sectionId) return null
 

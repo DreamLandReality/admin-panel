@@ -62,6 +62,40 @@ function extractPropertyContext(manifest: unknown, siteData: unknown): string {
   return lines.join("\n").trim()
 }
 
+function labelFromRawSource(id: string): string {
+  return id
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "Unknown"
+}
+
+function resolveLeadSource(manifest: unknown, rawFormType: unknown): Record<string, unknown> {
+  const id = typeof rawFormType === "string" && rawFormType.trim()
+    ? rawFormType.trim()
+    : "contact"
+  const leadSources = (manifest as any)?.leadSources
+  const source = leadSources && typeof leadSources === "object" ? leadSources[id] : null
+
+  if (source && typeof source === "object") {
+    return {
+      id,
+      label: typeof source.label === "string" && source.label.trim() ? source.label : labelFromRawSource(id),
+      kind: typeof source.kind === "string" && source.kind.trim() ? source.kind : "custom",
+      sectionId: typeof source.sectionId === "string" ? source.sectionId : undefined,
+      gateId: typeof source.gateId === "string" ? source.gateId : undefined,
+      known: true,
+    }
+  }
+
+  return {
+    id,
+    label: `Unknown: ${labelFromRawSource(id)}`,
+    kind: "unknown",
+    known: false,
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CORS_HEADERS = {
@@ -163,6 +197,38 @@ serve(async (req) => {
       )
     }
 
+    // Deduplication: check if this email already submitted for this deployment
+    const { data: existingSubmission } = await supabase
+      .from("form_submissions")
+      .select("id, created_at")
+      .eq("deployment_id", deployment.id)
+      .eq("email", email.trim().toLowerCase())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existingSubmission) {
+      console.log("[submit-form] Duplicate submission detected:", { 
+        deployment_id: deployment.id, 
+        email: email.trim().toLowerCase(),
+        existing_id: existingSubmission.id,
+        existing_created_at: existingSubmission.created_at
+      })
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          alreadySubmitted: true,
+          message: "Thank you for your enquiry!" 
+        }),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" }, status: 200 }
+      )
+    }
+
+    const normalizedFormType = typeof form_type === "string" && form_type.trim()
+      ? form_type.trim()
+      : "contact"
+    const sourceMetadata = resolveLeadSource(deployment.template_manifest, normalizedFormType)
+
     // Insert the form submission
     const { data: insertedRow, error: insertError } = await supabase
       .from("form_submissions")
@@ -175,7 +241,8 @@ serve(async (req) => {
         message: message?.trim() || null,
         source_url: source_url?.trim() || "",
         ip_address: ip,
-        form_type: form_type || "contact",
+        form_type: normalizedFormType,
+        source_metadata: sourceMetadata,
       })
       .select("id")
       .single()
@@ -198,73 +265,43 @@ serve(async (req) => {
     // ── Schedule or initiate voice call ──────────────────────────────────────
     const voiceEnabled = Deno.env.get("VOICE_AGENT_ENABLED") === "true"
     const devMode = Deno.env.get("VOICE_AGENT_DEV_MODE") === "true"
-    const elevenlabsKey = Deno.env.get("ELEVENLABS_API_KEY")
-    const agentId = Deno.env.get("ELEVENLABS_AGENT_ID")
     const qstashToken = Deno.env.get("QSTASH_TOKEN")
     const adminUrl = Deno.env.get("ADMIN_PANEL_URL")
 
-    console.log("[submit-form] Voice config:", { voiceEnabled, devMode, hasElevenlabsKey: !!elevenlabsKey, hasAgentId: !!agentId, hasPhone: !!phone?.trim() })
+    console.log("[submit-form] Voice config:", { voiceEnabled, devMode, hasQstashToken: !!qstashToken, hasAdminUrl: !!adminUrl, hasPhone: !!phone?.trim() })
 
-    if (voiceEnabled && phone?.trim()) {
+    if (voiceEnabled && (devMode || phone?.trim())) {
       console.log("[submit-form] Voice block entered")
-      if (devMode && elevenlabsKey && agentId) {
-        console.log("[submit-form] Dev mode: calling ElevenLabs for signed URL")
-        // ── DEV MODE: get signed URL so browser can connect immediately ──────
+      if (qstashToken && adminUrl) {
+        // ── Schedule via QStash. Dev mode has no delay; prod keeps 30-60 min. ──
         try {
-          const res = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`, {
-            method: "GET",
-            headers: { "xi-api-key": elevenlabsKey },
-          })
-
-          console.log("[submit-form] ElevenLabs response status:", res.status)
-
-          if (!res.ok) {
-            const errText = await res.text()
-            console.error("[submit-form] ElevenLabs error:", res.status, errText)
-          }
-
-          if (res.ok) {
-            const json = await res.json()
-            const signed_url = json.signed_url ?? json.signedUrl ?? json.url
-            console.log("[submit-form] ElevenLabs signed_url:", signed_url ? "delayed" : "missing")
-            const { error: updateError } = await supabase
-              .from("form_submissions")
-              .update({
-                call_status: "calling",
-                call_signed_url: signed_url,
-                call_scheduled_at: new Date().toISOString(),
-                call_attempts: 1,
-                call_property_context: propertyContext,
-              })
-              .eq("id", insertedRow.id)
-            console.log("[submit-form] DB update result:", updateError ? `ERROR: ${updateError.message} (${updateError.code})` : "success")
-          }
-        } catch (err) {
-          console.error("[submit-form] Dev voice call failed:", err)
-        }
-
-      } else if (!devMode && qstashToken && adminUrl) {
-        // ── PROD MODE: schedule via QStash ────────────────────────────────────
-        try {
-          const delaySeconds = (Math.floor(Math.random() * 31) + 30) * 60 // 30-60 min
+          const delaySeconds = devMode ? 0 : (Math.floor(Math.random() * 31) + 30) * 60 // prod: 30-60 min
           const triggerUrl = `${adminUrl}/api/voice-call/trigger`
+          const headers: Record<string, string> = {
+            Authorization: `Bearer ${qstashToken}`,
+            "Content-Type": "application/json",
+            "Upstash-Retries": "2",
+          }
+          if (delaySeconds > 0) {
+            headers["Upstash-Delay"] = `${delaySeconds}s`
+          }
 
-          await fetch(`https://qstash.upstash.io/v1/publish/${triggerUrl}`, {
+          const qstashResponse = await fetch(`https://qstash.upstash.io/v1/publish/${triggerUrl}`, {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${qstashToken}`,
-              "Content-Type": "application/json",
-              "Upstash-Delay": `${delaySeconds}s`,
-              "Upstash-Retries": "2",
-            },
+            headers,
             body: JSON.stringify({
               submission_id: insertedRow.id,
-              phone: phone.trim(),
+              phone: phone?.trim() || "",
               name,
               deployment_slug: deployment.slug,
               property_name: deployment.project_name,
             }),
           })
+
+          if (!qstashResponse.ok) {
+            const errorText = await qstashResponse.text().catch(() => "")
+            throw new Error(`QStash publish failed (${qstashResponse.status}): ${errorText}`)
+          }
 
           await supabase
             .from("form_submissions")
@@ -277,12 +314,27 @@ serve(async (req) => {
             .eq("id", insertedRow.id)
         } catch (err) {
           console.error("[submit-form] Failed to schedule voice call:", err)
+          await supabase
+            .from("form_submissions")
+            .update({
+              call_status: "failed",
+              call_property_context: propertyContext,
+            })
+            .eq("id", insertedRow.id)
         }
+      } else {
+        await supabase
+          .from("form_submissions")
+          .update({
+            call_status: "failed",
+            call_property_context: propertyContext,
+          })
+          .eq("id", insertedRow.id)
       }
-    } else if (!phone?.trim()) {
+    } else if (!devMode && !phone?.trim()) {
       await supabase
         .from("form_submissions")
-        .update({ call_status: "skipped" })
+        .update({ call_status: "skipped", call_property_context: propertyContext })
         .eq("id", insertedRow.id)
     }
 

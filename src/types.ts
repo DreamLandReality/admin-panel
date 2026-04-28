@@ -27,10 +27,85 @@ export interface TemplateManifest {
   templateId: string
   version: string
   assetStorage?: AssetStorage
+  gates?: SharedGateConfig[]
+  gateActionOwnership?: Record<string, Record<string, string[]>>
+  leadSources?: Record<string, ManifestLeadSource>
+  stateTypes?: Record<string, ManifestStateType>
   pages?: ManifestPage[]
   globalSections?: string[]
   sections: ManifestSection[]
   collections?: Collection[]
+  styleOverrides?: Record<string, Record<string, Record<string, unknown>>>
+}
+
+export interface ManifestLeadSource {
+  label: string
+  kind: 'contact' | 'gate' | 'custom' | string
+  sectionId: string
+  gateId?: string
+}
+
+export type ManifestStateType =
+  | {
+      type: 'enum'
+      values: string[]
+      default: string
+      persist: boolean
+      description?: string
+    }
+  | {
+      type: 'boolean'
+      default: boolean
+      persist: boolean
+      description?: string
+    }
+  | {
+      type: 'number'
+      default: number
+      persist: boolean
+      description?: string
+      validation?: { min?: number; max?: number }
+    }
+  | {
+      type: 'string'
+      default: string
+      persist: boolean
+      description?: string
+      validation?: { pattern?: string }
+    }
+  | {
+      type: 'object'
+      default: Record<string, unknown>
+      persist: boolean
+      description?: string
+    }
+
+export interface SharedGateAction {
+  id: string
+  mode?: 'reveal' | 'download' | 'link' | string
+  sectionId?: string
+  sectionIds?: string[]
+  virtual?: boolean
+  [key: string]: unknown
+}
+
+export interface SharedGateConfig {
+  id: string
+  statePath?: string
+  storageKey?: string
+  defaultState?: string
+  formState?: string
+  successState?: string
+  failureState?: string
+  expiredState?: string
+  persistStates?: string[]
+  persist?: boolean
+  formSectionId?: string
+  siteToken?: string | null
+  submissionEndpoint?: string | null
+  supabaseAnonKey?: string | null
+  actions?: SharedGateAction[]
+  [key: string]: unknown
 }
 
 export interface FieldGroup {
@@ -93,6 +168,8 @@ export interface ManifestSection {
   dataType?: 'object' | 'array'
   data?: any
   required: boolean
+  enabled?: boolean
+  showInNav?: boolean
   /** When true, section cannot be toggled off by editor users. */
   locked?: boolean
   page?: string
@@ -239,9 +316,20 @@ export interface FormSubmission {
   phone: string | null
   message: string | null
   source_url: string
+  form_type: 'contact' | 'price-unlock' | string
+  source_metadata: ResolvedSubmissionSource | null
   ip_address: string | null
   is_read: boolean
   created_at: string
+}
+
+export interface ResolvedSubmissionSource {
+  id: string
+  label: string
+  kind: string
+  sectionId?: string
+  gateId?: string
+  known: boolean
 }
 
 // ─── Draft Types ────────────────────────────────────────────────────────────
@@ -255,11 +343,11 @@ export interface Draft {
   current_step: number
   raw_text: string
   section_data: Record<string, any>
-  sections_registry: Record<string, { enabled: boolean }>
+  sections_registry: Record<string, { enabled: boolean; showInNav?: boolean }>
   collection_data: Record<string, any[]>
   project_name: string | null
   site_slug: string | null
-  last_active_page: string
+  last_active_page: string | null
   screenshot_url: string | null
   created_at: string
   updated_at: string
@@ -293,14 +381,16 @@ export interface SiteData {
    * Per-section enabled state persisted in the DB.
    * `enabled` controls whether the section renders on the live site (visitor-facing).
    */
-  _sections?: Record<string, { enabled: boolean }>
+  _sections?: Record<string, { enabled: boolean; showInNav?: boolean }>
   [sectionId: string]: unknown
 }
 
 export interface SectionRegistry {
-  id: string
+  id?: string
   /** Controls whether the section renders on the live site (visitor-facing). */
   enabled: boolean
+  /** Controls whether the section appears in the template-owned navbar. */
+  showInNav?: boolean
 }
 
 export interface StatusLogEntry {
@@ -371,7 +461,7 @@ export interface DeployStepState {
 export interface ValidationError {
   field: string
   message: string
-  type: 'missing_data' | 'blob_url' | 'default_image' | 'missing_required'
+  type: 'missing_data' | 'blob_url' | 'default_image' | 'missing_required' | 'invalid_gate'
 }
 
 export const DEPLOY_STEP_LABELS: Record<DeployStepId, string> = {

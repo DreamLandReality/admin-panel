@@ -79,8 +79,20 @@ export const env = {
   get ELEVENLABS_AGENT_PHONE_NUMBER_ID() {
     return requireValue('ELEVENLABS_AGENT_PHONE_NUMBER_ID', process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID)
   },
+  get ELEVENLABS_DEV_TO_NUMBER() {
+    return requireValue('ELEVENLABS_DEV_TO_NUMBER', process.env.ELEVENLABS_DEV_TO_NUMBER)
+  },
   get ELEVENLABS_WEBHOOK_SECRET() {
     return requireValue('ELEVENLABS_WEBHOOK_SECRET', process.env.ELEVENLABS_WEBHOOK_SECRET)
+  },
+  get VOICE_AGENT_DEV_MODE() {
+    return process.env.VOICE_AGENT_DEV_MODE === 'true'
+  },
+  get VOICE_AGENT_ENABLED() {
+    return process.env.VOICE_AGENT_ENABLED === 'true'
+  },
+  get ADMIN_PANEL_URL() {
+    return requireValue('ADMIN_PANEL_URL', process.env.ADMIN_PANEL_URL)
   },
 
   // ── QStash ──────────────────────────────────────────────────────────────────
@@ -91,14 +103,28 @@ export const env = {
   get QSTASH_NEXT_SIGNING_KEY() {
     return requireValue('QSTASH_NEXT_SIGNING_KEY', process.env.QSTASH_NEXT_SIGNING_KEY)
   },
+  get QSTASH_TOKEN() {
+    return requireValue('QSTASH_TOKEN', process.env.QSTASH_TOKEN)
+  },
 
   /** True when all voice agent env vars are present (no throw). */
   get isVoiceAgentConfigured(): boolean {
-    return !!(
+    const baseConfigured = !!(
       process.env.ELEVENLABS_API_KEY &&
       process.env.ELEVENLABS_AGENT_ID &&
-      process.env.QSTASH_TOKEN
+      process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID &&
+      process.env.ELEVENLABS_WEBHOOK_SECRET &&
+      process.env.QSTASH_TOKEN &&
+      process.env.QSTASH_CURRENT_SIGNING_KEY &&
+      process.env.QSTASH_NEXT_SIGNING_KEY &&
+      process.env.ADMIN_PANEL_URL &&
+      process.env.VOICE_AGENT_ENABLED === 'true'
     )
+    if (!baseConfigured) return false
+    if (process.env.VOICE_AGENT_DEV_MODE === 'true') {
+      return !!process.env.ELEVENLABS_DEV_TO_NUMBER
+    }
+    return true
   },
 
 }

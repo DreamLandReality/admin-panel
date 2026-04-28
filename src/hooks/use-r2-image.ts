@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { imageService } from '@/services/image'
 
 interface UseR2ImageReturn {
   imageUrl: string | null
@@ -43,46 +44,30 @@ export function useR2Image(
 
     // Otherwise, fetch signed URL from API
     let isCancelled = false
+    const key = objectKey
 
     async function fetchSignedUrl() {
       setLoading(true)
       setError(null)
 
       if (process.env.NODE_ENV === 'development') {
-        console.log('[R2Image] Fetching signed URL for:', objectKey)
+              console.log('[R2Image] Fetching signed URL for:', key)
       }
 
       try {
-        const response = await fetch('/api/r2/signed-url', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            objectKey,
-            expiresIn,
-            ...(bucket ? { bucket } : {})
-          })
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch signed URL: ${response.statusText}`)
-        }
-
-        const data = await response.json()
-
+        const result = await imageService.getSignedUrl(key, { expiresIn, ...(bucket ? { bucket } : {}) })
         if (!isCancelled) {
-          if (data.error) {
+          if (!result.ok) {
             if (process.env.NODE_ENV === 'development') {
-              console.error('[R2Image] Error:', data.error)
+              console.error('[R2Image] Error:', result.error.message)
             }
-            setError(data.error)
+            setError(result.error.message)
             setImageUrl(null)
           } else {
             if (process.env.NODE_ENV === 'development') {
               console.log('[R2Image] Signed URL generated successfully')
             }
-            setImageUrl(data.url)
+            setImageUrl(result.data.url)
             setError(null)
           }
         }

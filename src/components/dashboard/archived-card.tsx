@@ -8,6 +8,7 @@ import type { DeploymentCardData } from '@/types'
 import { AnimatedCard } from '@/components/ui/animated-card'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
 import { getThumbnailSrc, formatRelativeTime } from '@/lib/utils/dashboard'
+import { deploymentService } from '@/services/deployment'
 
 export function ArchivedCard({
   deployment,
@@ -83,9 +84,9 @@ export function ArchivedCard({
 
           {/* Info */}
           <div className="px-3 pt-2.5 pb-3 bg-card">
-            {(deployment as any).templates?.slug && (
+            {deployment.templates?.slug && (
               <p className="text-label uppercase tracking-label text-muted-foreground/50 mb-0.5">
-                {(deployment as any).templates.slug}
+                {deployment.templates.slug}
               </p>
             )}
             <p className="text-sm font-medium text-foreground/50 leading-snug truncate mb-1.5">
@@ -109,10 +110,9 @@ export function ArchivedCard({
         onConfirm={async () => {
           setRestoring(true)
           try {
-            const res = await fetch(`/api/deployments/${deployment.id}/restore`, { method: 'POST' })
-            const json = await res.json()
-            if (json.deploymentId) {
-              router.push(`/deployments/${json.deploymentId}`)
+            const result = await deploymentService.restore(deployment.id)
+            if (result.ok) {
+              router.push(`/deployments/${result.data.deploymentId}`)
             }
           } finally {
             setRestoring(false)

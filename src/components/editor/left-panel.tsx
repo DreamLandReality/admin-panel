@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { usePageList } from '@/hooks/use-page-list'
 import { Toggle, ButtonGroup } from '@/components/primitives'
 import { CollectionsPanel } from './collections-panel'
@@ -103,24 +105,30 @@ function ComponentRow({
 
 // ─── LeftPanel ────────────────────────────────────────────────────────────────
 
-export const LeftPanel = React.memo(function LeftPanel({ iframeRef }: { iframeRef?: React.RefObject<HTMLIFrameElement | null> }) {
+interface LeftPanelProps {
+  iframeRef?: React.RefObject<HTMLIFrameElement | null>
+}
+
+export const LeftPanel = React.memo(function LeftPanel({
+  iframeRef,
+}: LeftPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [pagePickerOpen, setPagePickerOpen] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
-  const panelMode = useWizardStore((s) => s.panelMode)
-  const setPanelMode = useWizardStore((s) => s.setPanelMode)
+  const panelMode = useUiStore((s) => s.panelMode)
+  const setPanelMode = useUiStore((s) => s.setPanelMode)
 
   // ── Zustand selectors: subscribe only to fields needed for render ──
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const activePage = useWizardStore((s) => s.activePage)
-  const sectionsRegistry = useWizardStore((s) => s.sectionsRegistry)
-  const selection = useWizardStore((s) => s.selection)
+  const activePage = useUiStore((s) => s.activePage)
+  const sectionsRegistry = useEditorStore((s) => s.sectionsRegistry)
+  const selection = useUiStore((s) => s.selection)
 
   // Actions — stable references
-  const setActivePage = useWizardStore((s) => s.setActivePage)
-  const toggleSection = useWizardStore((s) => s.toggleSection)
-  const setSelection = useWizardStore((s) => s.setSelection)
-  const clearSelection = useWizardStore((s) => s.clearSelection)
+  const setActivePage = useUiStore((s) => s.setActivePage)
+  const toggleSection = useEditorStore((s) => s.toggleSection)
+  const setSelection = useUiStore((s) => s.setSelection)
+  const clearSelection = useUiStore((s) => s.clearSelection)
 
   // Scroll the section row into view when the iframe fires element-selected
   const selectedSectionId = selection.sectionId

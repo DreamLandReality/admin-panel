@@ -1,6 +1,6 @@
 # R2 Image Display in Admin Panel
 
-The admin panel can display images from private Cloudflare R2 bucket using signed URLs generated on-demand.
+The admin panel displays screenshots from a private Cloudflare R2 bucket using signed URLs generated on demand. Customer/editor upload assets use the public R2 assets bucket and CDN URL.
 
 ## Setup
 
@@ -11,17 +11,23 @@ Add the following to your `admin-panel/.env.local` file:
 ```bash
 CLOUDFLARE_R2_ACCESS_KEY_ID=your_r2_access_key_id
 CLOUDFLARE_R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
-CLOUDFLARE_R2_BUCKET_NAME=template-screenshots
-CLOUDFLARE_R2_ACCOUNT_ID=your_r2_account_id
+CLOUDFLARE_ACCOUNT_ID=your_r2_account_id
+
+# Private screenshots bucket
+CLOUDFLARE_R2_BUCKET_NAME=screenshots
+
+# Public customer/template asset bucket
+CLOUDFLARE_R2_ASSETS_BUCKET_NAME=assets
+NEXT_PUBLIC_R2_PUBLIC_URL=https://pub-your-hash.r2.dev
 ```
 
-**Note:** These are the same R2 credentials you use in `templates/.env.deploy` for deployment scripts.
+**Note:** `CLOUDFLARE_ACCOUNT_ID` is shared with the Cloudflare Pages deployment config. The old `CLOUDFLARE_R2_ACCOUNT_ID` name is not used by the app.
 
 ### 2. Bucket Setup
 
-- Bucket should be **PRIVATE** (recommended for security)
-- Signed URLs are generated on-demand with 1-hour expiration (configurable)
-- No public access needed
+- `CLOUDFLARE_R2_BUCKET_NAME` should be **private** for screenshots and signed-url reads.
+- `CLOUDFLARE_R2_ASSETS_BUCKET_NAME` should be **public** for customer image uploads and template assets.
+- Signed screenshot URLs are generated on demand with a 1-hour expiration by default.
 
 ## Usage
 
@@ -80,12 +86,13 @@ const { url } = await response.json()
 Object keys follow this structure:
 
 - **Template screenshots**: `screenshots/{template-slug}/preview.png`
-- **User uploads** (future): `user-uploads/{user-id}/filename.png`
-- **Deployment assets** (future): `deployments/{deployment-id}/filename.png`
+- **Deployment screenshots**: `screenshots/deployments/{deployment-id}.png`
+- **Customer/editor uploads**: `uploads/{deployment-id}/{filename}`
+- **Shared defaults**: `shared-defaults/{template}/{asset}`
 
 ## Smart URL Handling
 
-The `useR2Image` hook automatically detects:
+The `useR2Image` hook delegates signed-url reads through `imageService.getSignedUrl()` and automatically detects:
 
 - **Full URLs** (http/https): Used directly, no signed URL generation
 - **R2 object keys**: Generates signed URL via API
@@ -98,10 +105,11 @@ This means template preview URLs from the database work whether they're:
 
 ## Security
 
-- Bucket remains **private** - no public access
-- Signed URLs expire after 1 hour by default (customizable)
-- Credentials stored securely in environment variables
-- API route validates input before generating URLs
+- Screenshot bucket remains **private** - no public access.
+- Asset bucket is intentionally public and only receives image assets through admin-controlled upload paths.
+- Signed URLs expire after 1 hour by default.
+- Credentials stay in environment variables.
+- API routes validate input before generating URLs.
 
 ## Performance
 

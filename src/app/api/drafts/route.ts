@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       sections_registry: sections_registry ?? {},
       collection_data: collection_data ?? {},
       site_slug: site_slug ?? null,
-      last_active_page: last_active_page ?? 'home',
+      last_active_page: last_active_page ?? null,
       screenshot_url: screenshot_url ?? null,
       updated_at: new Date().toISOString(),
     }
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
         sections_registry: sections_registry ?? {},
         collection_data: collection_data ?? {},
         site_slug: site_slug ?? null,
-        last_active_page: last_active_page ?? 'home',
+        last_active_page: last_active_page ?? null,
         screenshot_url: screenshot_url ?? null,
         updated_at: new Date().toISOString(),
       },

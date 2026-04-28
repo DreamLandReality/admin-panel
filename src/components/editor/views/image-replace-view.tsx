@@ -1,6 +1,8 @@
 'use client'
 
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { buildPageList } from '@/lib/utils/page-list'
 import { postToIframe } from '@/lib/utils/iframe'
 import { useImageUpload } from '@/hooks/use-image-upload'
@@ -11,19 +13,19 @@ import { Breadcrumb, PanelInput } from '../panel-inputs'
 
 export function ImageReplaceView({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
   // ── Zustand selectors ──
-  const selection = useWizardStore((s) => s.selection)
-  const sectionData = useWizardStore((s) => s.sectionData)
-  const collectionData = useWizardStore((s) => s.collectionData)
+  const selection = useUiStore((s) => s.selection)
+  const sectionData = useEditorStore((s) => s.sectionData)
+  const collectionData = useEditorStore((s) => s.collectionData)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const activePage = useWizardStore((s) => s.activePage)
+  const activePage = useUiStore((s) => s.activePage)
   const projectName = useWizardStore((s) => s.projectName)
-  const clearSelection = useWizardStore((s) => s.clearSelection)
-  const updateField = useWizardStore((s) => s.updateField)
-  const updateCollectionItem = useWizardStore((s) => s.updateCollectionItem)
-  const updateArrayItemField = useWizardStore((s) => s.updateArrayItemField)
-  const setBlobUrl = useWizardStore((s) => s.setBlobUrl)
-  const setDataUrl = useWizardStore((s) => s.setDataUrl)
-  const addPendingImage = useWizardStore((s) => s.addPendingImage)
+  const clearSelection = useUiStore((s) => s.clearSelection)
+  const updateField = useEditorStore((s) => s.updateField)
+  const updateCollectionItem = useEditorStore((s) => s.updateCollectionItem)
+  const updateArrayItemField = useEditorStore((s) => s.updateArrayItemField)
+  const setBlobUrl = useEditorStore((s) => s.setBlobUrl)
+  const setDataUrl = useEditorStore((s) => s.setDataUrl)
+  const addPendingImage = useEditorStore((s) => s.addPendingImage)
   const { sectionId, field, content } = selection
 
   const { fileInputRef, triggerUpload, handleFileChange } = useImageUpload(

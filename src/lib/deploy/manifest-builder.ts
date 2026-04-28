@@ -1,5 +1,11 @@
 import type { CollectionItem, SiteData, TemplateManifest } from '@/types'
 import { findContactFormSections, findFirstImageInSection } from '@/lib/constants'
+import {
+  filterGateActionsForSections,
+  isManifestSectionEnabled,
+  normalizeManifestGates,
+  seedManifestStateDefaults,
+} from '@/lib/utils/manifest-contract'
 
 /**
  * Recursively strip any key ending with __style or __styles from data.
@@ -72,6 +78,31 @@ function extractStyleOverrides(
   return result
 }
 
+function injectGateCredentials(
+  manifest: TemplateManifest,
+  sections: Record<string, { enabled: boolean; showInNav?: boolean }> | undefined,
+  siteToken: string,
+  submissionEndpoint: string,
+  supabaseAnonKey?: string
+): void {
+  normalizeManifestGates(manifest)
+  if (!Array.isArray(manifest.gates)) return
+
+  manifest.gates = manifest.gates
+    .filter((gate) => isManifestSectionEnabled(gate.formSectionId, sections))
+    .map((gate) => ({
+      ...gate,
+      siteToken,
+      submissionEndpoint,
+      supabaseAnonKey: supabaseAnonKey ?? gate.supabaseAnonKey ?? null,
+      actions: filterGateActionsForSections(
+        gate.actions,
+        sections,
+        manifest.gateActionOwnership?.[gate.id]
+      ),
+    }))
+}
+
 /**
  * Build a deploy-ready template.manifest.json from:
  * - frozenManifest : the manifest snapshot stored on the deployment row
@@ -94,7 +125,7 @@ export function buildDeployManifest(
 
   // Split meta-keys out of siteData
   const { _sections, _collections, ...sectionDataOnly } = siteData as Record<string, unknown> & {
-    _sections?: Record<string, { enabled: boolean }>
+    _sections?: Record<string, { enabled: boolean; showInNav?: boolean }>
     _collections?: Record<string, unknown[]>
   }
 
@@ -105,9 +136,13 @@ export function buildDeployManifest(
   if (!Array.isArray(manifest.sections)) {
     throw new Error('Invalid manifest: sections must be an array')
   }
+
+  normalizeManifestGates(manifest)
+
   for (const section of manifest.sections) {
     // Apply enabled state from _sections registry (default: true)
     ;(section as unknown as Record<string, unknown>).enabled = _sections?.[section.id]?.enabled ?? true
+    ;(section as unknown as Record<string, unknown>).showInNav = _sections?.[section.id]?.showInNav ?? (section.showInNav === true)
 
     // Replace section.data with user-edited data (strip style keys)
     if (sectionDataOnly[section.id] !== undefined) {
@@ -125,6 +160,8 @@ export function buildDeployManifest(
       if (supabaseAnonKey) contactData.supabaseAnonKey = supabaseAnonKey
     }
   }
+
+  seedManifestStateDefaults(manifest)
 
   // ── Auto-fill seo.image from first available section image if not set ─────
   const seoSection = manifest.sections.find(s =>
@@ -159,6 +196,10 @@ export function buildDeployManifest(
   if (Object.keys(styleOverrides).length > 0) {
     ;(manifest as any).styleOverrides = styleOverrides
   }
+
+  // ── Gate credentials ────────────────────────────────────────────────────
+  // Template-library consumes canonical gates[]; legacy gate is normalized away.
+  injectGateCredentials(manifest, _sections, siteToken, submissionEndpoint, supabaseAnonKey)
 
   return manifest
 }

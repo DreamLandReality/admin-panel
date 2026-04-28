@@ -3,17 +3,19 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import type { Collection } from '@/types'
 
 // ─── CollectionsPanel (navigation-only for Data mode) ───────────────────────
 
 export function CollectionsPanel() {
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
-  const collectionData = useWizardStore((s) => s.collectionData)
-  const addCollectionItem = useWizardStore((s) => s.addCollectionItem)
-  const removeCollectionItem = useWizardStore((s) => s.removeCollectionItem)
-  const selectedCollectionItem = useWizardStore((s) => s.selectedCollectionItem)
-  const setSelectedCollectionItem = useWizardStore((s) => s.setSelectedCollectionItem)
+  const collectionData = useEditorStore((s) => s.collectionData)
+  const addCollectionItem = useEditorStore((s) => s.addCollectionItem)
+  const removeCollectionItem = useEditorStore((s) => s.removeCollectionItem)
+  const selectedCollectionItem = useUiStore((s) => s.selectedCollectionItem)
+  const setSelectedCollectionItem = useUiStore((s) => s.setSelectedCollectionItem)
 
   const collections: Collection[] = (selectedTemplate?.manifest?.collections as Collection[]) ?? []
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(

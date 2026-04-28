@@ -10,17 +10,14 @@ import { SyncHeaderContent } from '@/components/shared/sync-header-content'
 import { Skeleton } from '@/components/ui'
 import { useWizardStore } from '@/stores/wizard-store'
 import { ROUTES } from '@/lib/constants'
-import type { Template } from '@/types'
+import { deploymentService } from '@/services/deployment'
+import { draftService } from '@/services/draft'
+import { getAppConfig } from '@/services/config'
+import { templateService } from '@/services/template'
+import type { SiteData, Template } from '@/types'
+import type { ActiveDeployment } from '@/services/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface ActiveDeploy {
-  id: string
-  project_name: string
-  status: 'deploying' | 'building'
-  updated_at: string
-  github_repo: string | null
-}
 
 // ── Active deployment gate ─────────────────────────────────────────────────────
 
@@ -28,8 +25,12 @@ function minutesAgo(isoString: string): number {
   return Math.floor((Date.now() - new Date(isoString).getTime()) / 60_000)
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 interface GateProps {
-  deployment: ActiveDeploy
+  deployment: ActiveDeployment
   isLikelyStuck: boolean
   onCancelSuccess: () => void
 }
@@ -44,14 +45,12 @@ function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: Ga
     setCancelling(true)
     setCancelError(null)
     try {
-      const res = await fetch(`/api/deployments/${deployment.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel', site_data: {} }),
+      const result = await deploymentService.update(deployment.id, {
+        action: 'cancel',
+        siteData: {} as SiteData,
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        setCancelError(json.error ?? 'Could not cancel. Try again.')
+      if (!result.ok) {
+        setCancelError(result.error.message || 'Could not cancel. Try again.')
         setCancelling(false)
         return
       }
@@ -175,7 +174,7 @@ function NewDeploymentPageContent() {
   const [loading, setLoading] = useState(true)
   const [isAiConfigured, setIsAiConfigured] = useState(false)
   const [isGeminiConfigured, setIsGeminiConfigured] = useState(false)
-  const [activeDeployment, setActiveDeployment] = useState<ActiveDeploy | null>(null)
+  const [activeDeployment, setActiveDeployment] = useState<ActiveDeployment | null>(null)
   const [isLikelyStuck, setIsLikelyStuck] = useState(false)
   const currentStep = useWizardStore((s) => s.currentStep)
   const reset = useWizardStore((s) => s.reset)
@@ -189,64 +188,52 @@ function NewDeploymentPageContent() {
 
     // ── Check for active deployment before loading the wizard ──────────────
     try {
-      const activeRes = await fetch('/api/deployments/active', { signal })
-      if (activeRes.ok) {
-        const { deployment, isLikelyStuck: stuck } = await activeRes.json()
-        if (deployment) {
-          if (stuck) {
-            // Zombie — auto-cancel it silently and continue loading the wizard
-            try {
-              await fetch(`/api/deployments/${deployment.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'cancel', site_data: {} }),
-                signal,
-              })
-              // Fall through to load the wizard normally
-            } catch (err: any) {
-              if (err.name === 'AbortError') return
-              // Cancel failed — show the gate as a fallback
-              setActiveDeployment(deployment)
-              setIsLikelyStuck(stuck)
-              setLoading(false)
-              return
-            }
-          } else {
-            // Genuine in-progress deployment — redirect straight to its progress page
-            router.replace(`/deployments/${deployment.id}/progress`)
+      const activeResult = await deploymentService.getActive({ signal })
+      if (activeResult.ok && activeResult.data.deployment) {
+        const { deployment, isLikelyStuck: stuck } = activeResult.data
+        if (stuck) {
+          // Zombie — auto-cancel it silently and continue loading the wizard
+          const cancelResult = await deploymentService.update(deployment.id, {
+            action: 'cancel',
+            siteData: {} as SiteData,
+          }, { signal })
+          if (!cancelResult.ok) {
+            setActiveDeployment(deployment)
+            setIsLikelyStuck(stuck)
+            setLoading(false)
             return
           }
+        } else {
+          // Genuine in-progress deployment — redirect straight to its progress page
+          router.replace(`/deployments/${deployment.id}/progress`)
+          return
         }
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return
+    } catch (err: unknown) {
+      if (isAbortError(err)) return
       // Network failure: fall through and let the 429 guard in /deploy handle it
     }
 
     setActiveDeployment(null)
 
     // ── Load templates and feature flags in parallel ───────────────────────
-    const [templatesRes, configRes] = await Promise.all([
-      fetch('/api/templates', { signal }),
-      fetch('/api/config', { signal }),
+    const [templatesResult, configResult] = await Promise.all([
+      templateService.list({ signal }),
+      getAppConfig({ signal }),
     ])
-    const templatesData = await templatesRes.json()
-    const allTemplates: Template[] = templatesData.data ?? []
+    const allTemplates: Template[] = templatesResult.ok ? templatesResult.data : []
     setTemplates(allTemplates)
 
-    if (configRes.ok) {
-      const config = await configRes.json()
-      setIsAiConfigured(!!config.isAiConfigured)
-      setIsGeminiConfigured(!!config.isGeminiConfigured)
+    if (configResult.ok) {
+      setIsAiConfigured(configResult.data.isAiConfigured)
+      setIsGeminiConfigured(configResult.data.isGeminiConfigured)
     }
 
     if (draftId) {
       try {
-        const draftRes = await fetch(`/api/drafts/${draftId}`, { signal })
-        const draftData = await draftRes.json()
-
-        if (draftRes.ok && draftData.data) {
-          const draft = draftData.data
+        const draftResult = await draftService.get(draftId, { signal })
+        if (draftResult.ok) {
+          const draft = draftResult.data
           const template = allTemplates.find(
             (t) => t.id === draft.template_id || t.slug === draft.template_slug
           )
@@ -257,11 +244,11 @@ function NewDeploymentPageContent() {
             reset()
           }
         } else {
-          console.error('[Resume] Draft not found:', draftData.error)
+          console.error('[Resume] Draft not found:', draftResult.error.message)
           reset()
         }
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
+      } catch (err: unknown) {
+        if (!isAbortError(err)) {
           console.error('[Resume] Failed:', err)
           reset()
         }

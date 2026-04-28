@@ -1,30 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { TemplateCard } from '@/components/shared/template-card'
 import { EditorShell } from '@/components/editor/editor-shell'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { Skeleton } from '@/components/ui'
+import { useTemplatesQuery } from '@/hooks/queries/use-templates-query'
 import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
 import type { Template } from '@/types'
 
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [loading, setLoading] = useState(true)
-  const isViewOnly = useWizardStore((s) => s.isViewOnly)
+  const { data: templates = [], isLoading } = useTemplatesQuery()
+  const isViewOnly = useUiStore((s) => s.isViewOnly)
   const selectedTemplate = useWizardStore((s) => s.selectedTemplate)
   const reset = useWizardStore((s) => s.reset)
   const selectTemplate = useWizardStore((s) => s.selectTemplate)
   const loadManualDefaults = useWizardStore((s) => s.loadManualDefaults)
-  const setViewOnly = useWizardStore((s) => s.setViewOnly)
-
-  useEffect(() => {
-    fetch('/api/templates')
-      .then((r) => r.json())
-      .then((data) => setTemplates(data.data ?? []))
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+  const setViewOnly = useUiStore((s) => s.setViewOnly)
 
   function handleView(template: Template) {
     reset()
@@ -38,7 +30,7 @@ export default function TemplatesPage() {
     return <EditorShell />
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (

@@ -5,8 +5,10 @@ import { useRouter, useParams } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { Spinner } from '@/components/primitives'
 import { Skeleton } from '@/components/ui'
+import { startDeployment } from '@/services/deploy'
+import { deploymentService } from '@/services/deployment'
 import { DEPLOY_STEP_LABELS } from '@/types'
-import type { DeployStepState, DeployStepId, DeployEvent } from '@/types'
+import type { DeployStepState, DeployStepId, DeployEvent, SiteData } from '@/types'
 import { useDeployTransitionStore } from '@/stores/deploy-transition-store'
 
 // ── Short labels for the horizontal dot track ─────────────────────────────────
@@ -110,7 +112,6 @@ export default function DeployProgressPage() {
     useDeployTransitionStore.getState().setTransitioning(false)
   }, [])
   const activeStep = steps.find((s) => s.status === 'running') ?? steps.find((s) => s.status === 'error')
-  const doneCount = steps.filter((s) => s.status === 'done').length
 
   // ── Poll DB for current status (SSE fallback) ─────────────────────────────
 
@@ -119,11 +120,9 @@ export default function DeployProgressPage() {
     setIsPolling(true)
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/deployments/${deploymentId}`)
-        if (!res.ok) return
-        const json = await res.json()
-        const dep = json.data?.deployment
-        if (!dep) return
+        const result = await deploymentService.get(deploymentId)
+        if (!result.ok) return
+        const dep = result.data.deployment
 
         if (dep.status === 'live') {
           setSiteUrl(dep.stable_url ?? dep.live_url)
@@ -163,21 +162,14 @@ export default function DeployProgressPage() {
 
     async function init() {
       try {
-        const res = await fetch(`/api/deployments/${deploymentId}`)
-        if (!res.ok) {
+        const result = await deploymentService.get(deploymentId)
+        if (!result.ok) {
           setErrorMsg('Deployment not found')
           setIsFailed(true)
           setIsLoading(false)
           return
         }
-        const json = await res.json()
-        const dep = json.data?.deployment
-        if (!dep) {
-          setErrorMsg('Deployment not found')
-          setIsFailed(true)
-          setIsLoading(false)
-          return
-        }
+        const dep = result.data.deployment
 
         const redeploy = !!dep.github_repo
         setProjectName(dep.project_name ?? '')
@@ -289,19 +281,14 @@ export default function DeployProgressPage() {
     }
     setIsRetrying(true)
     try {
-      const res = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectName: deployData.project_name,
-          templateId: deployData.template_id,
-          siteData: deployData.site_data,
-          deploymentId,
-        }),
+      const result = await startDeployment({
+        projectName: deployData.project_name,
+        templateId: deployData.template_id,
+        siteData: deployData.site_data as SiteData,
+        deploymentId,
       })
-      const json = await res.json().catch(() => ({ error: 'Unknown error' }))
-      if (!res.ok) {
-        setErrorMsg(json.error ?? 'Retry failed. Please try again.')
+      if (!result.ok) {
+        setErrorMsg(result.error.message || 'Retry failed. Please try again.')
         return
       }
       // Reset to deploying state and re-trigger the init effect via retryKey
@@ -312,8 +299,8 @@ export default function DeployProgressPage() {
       setIsLoading(true)
       setSteps([])
       setRetryKey((k) => k + 1)
-    } catch (err: any) {
-      setErrorMsg(err.message ?? 'Retry failed. Please try again.')
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Retry failed. Please try again.')
     } finally {
       setIsRetrying(false)
     }

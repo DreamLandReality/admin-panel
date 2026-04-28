@@ -40,57 +40,6 @@ import {
 import puppeteer from 'puppeteer'
 import { uploadToPrivateBucket } from '@/lib/utils/r2-storage'
 
-/**
- * Update astro.config.mjs in the GitHub repo to inject the real site URL
- * and enable sitemap generation.
- *
- * Replaces:
- *   site: 'https://example.com'
- * with:
- *   site: 'https://actual-site-url.pages.dev'
- *
- * And adds sitemap integration if not present.
- */
-async function injectAstroConfig(
-  repoFullName: string,
-  siteUrl: string,
-  commitMessage: string
-): Promise<void> {
-  const { content, sha } = await getFileContent(repoFullName, 'astro.config.mjs')
-
-  let updated = content
-
-  // Replace site URL — match even with trailing comment
-  updated = updated.replace(
-    /site:\s*['"]https:\/\/example\.com['"][^,]*,?\s*(?:\/\/.*)?$/m,
-    `site: '${siteUrl}',`
-  )
-
-  // Add sitemap import if not present
-  if (!updated.includes("from '@astrojs/sitemap'")) {
-    updated = updated.replace(
-      /(import\s+tailwind\s+from\s+['"]@astrojs\/tailwind['"];?)/,
-      "$1\nimport sitemap from '@astrojs/sitemap';"
-    )
-  }
-
-  // Add sitemap to integrations if not present — match various formatting
-  if (!updated.includes('sitemap()')) {
-    updated = updated.replace(
-      /integrations:\s*\[\s*tailwind\(\)\s*\]/,
-      'integrations: [\n    tailwind(),\n    sitemap()\n  ]'
-    )
-  }
-
-  await updateFileContent(
-    repoFullName,
-    'astro.config.mjs',
-    updated,
-    sha,
-    commitMessage
-  )
-}
-
 // ── Screenshot ────────────────────────────────────────────────────────────────
 
 /**
@@ -192,6 +141,15 @@ function supabaseAnonKey(): string {
   return key
 }
 
+function findBlobUrls(node: unknown): string[] {
+  if (typeof node === 'string' && node.startsWith('blob:')) return [node]
+  if (Array.isArray(node)) return node.flatMap(findBlobUrls)
+  if (node !== null && typeof node === 'object') {
+    return Object.values(node as object).flatMap(findBlobUrls)
+  }
+  return []
+}
+
 // ── First Deploy ──────────────────────────────────────────────────────────────
 
 export async function runDeployPipeline(
@@ -208,15 +166,7 @@ export async function runDeployPipeline(
   await runStep('upload_images', 'Validating images', emit, async () => {
     // At this point blobs should already be uploaded by the client.
     // This step is a server-side safety check.
-    function findBlobs(node: unknown): string[] {
-      if (typeof node === 'string' && node.startsWith('blob:')) return [node]
-      if (Array.isArray(node)) return node.flatMap(findBlobs)
-      if (node !== null && typeof node === 'object') {
-        return Object.values(node as object).flatMap(findBlobs)
-      }
-      return []
-    }
-    const blobs = findBlobs(deployment.site_data)
+    const blobs = findBlobUrls(deployment.site_data)
     if (blobs.length > 0) {
       throw new Error(`${blobs.length} image(s) not yet uploaded to R2. Save the draft first.`)
     }
@@ -318,12 +268,20 @@ export async function runDeployPipeline(
     }
     stableUrl = siteUrl  // save before cf_build overwrites with hash URL
     
-    // Inject real site URL and sitemap into astro.config.mjs
-    await injectAstroConfig(
-      repoFullName!,
-      siteUrl,
-      `chore: configure site URL and sitemap for ${deployment.project_name}`
-    )
+    // Legacy templates used a {{SITE_URL}} token. Current templates read SITE_URL
+    // from the Cloudflare environment with a localhost fallback, so no mutation is
+    // needed when the token is absent.
+    const { content: astroConfig, sha: astroSha } = await getFileContent(repoFullName!, 'astro.config.mjs')
+    if (astroConfig.includes('{{SITE_URL}}')) {
+      const updatedAstroConfig = astroConfig.replace(/\{\{SITE_URL\}\}/g, siteUrl)
+      await updateFileContent(
+        repoFullName!,
+        'astro.config.mjs',
+        updatedAstroConfig,
+        astroSha,
+        `chore: configure site URL for ${deployment.project_name}`
+      )
+    }
   })
 
   // Step 5: save_record
@@ -455,15 +413,7 @@ export async function runRedeployPipeline(
 
   // Step 1: upload_images — validate no blobs
   await runStep('upload_images', 'Validating images', emit, async () => {
-    function findBlobs(node: unknown): string[] {
-      if (typeof node === 'string' && node.startsWith('blob:')) return [node]
-      if (Array.isArray(node)) return node.flatMap(findBlobs)
-      if (node !== null && typeof node === 'object') {
-        return Object.values(node as object).flatMap(findBlobs)
-      }
-      return []
-    }
-    const blobs = findBlobs(deployment.site_data)
+    const blobs = findBlobUrls(deployment.site_data)
     if (blobs.length > 0) {
       throw new Error(`${blobs.length} image(s) not yet uploaded to R2. Save the draft first.`)
     }
@@ -488,12 +438,20 @@ export async function runRedeployPipeline(
       `chore: republish site data for ${deployment.project_name}`
     )
     
-    // Update astro.config.mjs with current site URL and sitemap
-    await injectAstroConfig(
-      repoFullName,
-      siteUrl,
-      `chore: update site URL and sitemap for ${deployment.project_name}`
-    )
+    // Legacy templates used a {{SITE_URL}} token. Current templates read SITE_URL
+    // from the Cloudflare environment with a localhost fallback, so no mutation is
+    // needed when the token is absent.
+    const { content: astroConfig, sha: astroSha } = await getFileContent(repoFullName, 'astro.config.mjs')
+    if (astroConfig.includes('{{SITE_URL}}')) {
+      const updatedAstroConfig = astroConfig.replace(/\{\{SITE_URL\}\}/g, siteUrl)
+      await updateFileContent(
+        repoFullName,
+        'astro.config.mjs',
+        updatedAstroConfig,
+        astroSha,
+        `chore: update site URL for ${deployment.project_name}`
+      )
+    }
   })
 
   // Step 3: save_record

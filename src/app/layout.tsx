@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import '@/app/globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { DeployTransitionOverlay } from '@/components/deploy-transition-overlay'
+import { QueryProvider } from '@/components/query-provider'
 
 export const metadata: Metadata = {
   title: 'Dream Land Reality | AI Architecture Suite',
@@ -27,8 +28,10 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          {children}
-          <DeployTransitionOverlay />
+          <QueryProvider>
+            {children}
+            <DeployTransitionOverlay />
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

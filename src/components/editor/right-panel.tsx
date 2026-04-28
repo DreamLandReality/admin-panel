@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react'
 import { MousePointerClick } from 'lucide-react'
-import { useWizardStore } from '@/stores/wizard-store'
+import { useUiStore } from '@/stores/ui-store'
 import { SharedLabelsView } from './views/shared-labels-view'
 import { SectionFieldsView } from './views/section-fields-view'
 import { DetailGroupView } from './views/detail-group-view'
@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/dashboard/empty-state'
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
 export const RightPanel = React.memo(function RightPanel({ iframeRef }: { iframeRef: React.RefObject<HTMLIFrameElement | null> }) {
-  const { mode, sectionId, field } = useWizardStore((s) => s.selection)
+  const { mode, sectionId, field } = useUiStore((s) => s.selection)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Reset scroll to top whenever the selected component changes
@@ -59,4 +59,3 @@ export const RightPanel = React.memo(function RightPanel({ iframeRef }: { iframe
     </div>
   )
 })
-

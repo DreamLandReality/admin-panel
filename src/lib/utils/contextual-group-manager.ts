@@ -32,7 +32,7 @@ export class ContextualGroupManager {
   createGroups(
     graph: DependencyGraph,
     currentValues: Record<string, any>,
-    properties: Record<string, FieldSchema>
+    _properties: Record<string, FieldSchema>
   ): ContextualGroup[] {
     const groups: ContextualGroup[] = []
     const processedFields = new Set<string>()

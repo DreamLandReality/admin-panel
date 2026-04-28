@@ -10,7 +10,7 @@
  * are immediately accessible via the public URL.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { uploadToR2, getAssetsBucketName } from '@/lib/utils/r2-storage'
 import { createClient } from '@/lib/supabase/server'
 import { createRateLimiter } from '@/lib/rate-limit'

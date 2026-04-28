@@ -34,6 +34,21 @@ export async function GET() {
   const isRealAnthropicKey = anthropicKey.startsWith('sk-ant-') && anthropicKey.length > 50
   const isRealGoogleKey = googleKey.startsWith('AIza') && googleKey.length > 30
 
+  const isVoiceBaseConfigured = !!(
+    process.env.ELEVENLABS_API_KEY &&
+    process.env.ELEVENLABS_AGENT_ID &&
+    process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID &&
+    process.env.ELEVENLABS_WEBHOOK_SECRET &&
+    process.env.QSTASH_TOKEN &&
+    process.env.QSTASH_CURRENT_SIGNING_KEY &&
+    process.env.QSTASH_NEXT_SIGNING_KEY &&
+    process.env.ADMIN_PANEL_URL &&
+    process.env.VOICE_AGENT_ENABLED === 'true'
+  )
+  const isVoiceAgentConfigured = process.env.VOICE_AGENT_DEV_MODE === 'true'
+    ? isVoiceBaseConfigured && !!process.env.ELEVENLABS_DEV_TO_NUMBER
+    : isVoiceBaseConfigured
+
   return NextResponse.json({
     isAiConfigured: !!(isRealAnthropicKey && process.env.ANTHROPIC_PARSE_MODEL),
     isGeminiConfigured: !!(isRealGoogleKey && process.env.GEMINI_PARSE_MODEL),
@@ -43,10 +58,6 @@ export async function GET() {
       process.env.CLOUDFLARE_API_TOKEN &&
       process.env.CLOUDFLARE_ACCOUNT_ID
     ),
-    isVoiceAgentConfigured: !!(
-      process.env.ELEVENLABS_API_KEY &&
-      process.env.ELEVENLABS_AGENT_ID &&
-      process.env.QSTASH_TOKEN
-    ),
+    isVoiceAgentConfigured,
   })
 }

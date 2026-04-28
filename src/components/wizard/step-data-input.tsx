@@ -8,6 +8,8 @@ import { Spinner, Heading } from '@/components/primitives'
 import { TextInput, TextArea } from '@/components/forms'
 import { Skeleton } from '@/components/ui'
 import { WarningCallout } from '@/components/feedback/WarningCallout'
+import { aiService } from '@/services/ai'
+import { templateService } from '@/services/template'
 
 const MAX_CHARS = 50_000
 const WARN_CHARS = 45_000
@@ -170,20 +172,14 @@ export function StepDataInput({
     setNameError('')
 
     try {
-      const res = await fetch(
-        `/api/projects/check-name?name=${encodeURIComponent(trimmed)}`,
-        { signal: controller.signal }
-      )
-      if (res.ok) {
-        const json = await res.json()
-        if (json.exists) {
-          setNameError(
-            json.type === 'deployment'
-              ? 'A deployed project with this name already exists'
-              : 'A draft with this name already exists'
-          )
-          return
-        }
+      const result = await templateService.checkProjectName(trimmed, { signal: controller.signal })
+      if (result.ok && result.data.exists) {
+        setNameError(
+          result.data.type === 'deployment'
+            ? 'A deployed project with this name already exists'
+            : 'A draft with this name already exists'
+        )
+        return
       }
     } catch {
       // Network error — allow proceeding
@@ -204,55 +200,24 @@ export function StepDataInput({
     abortControllerRef.current = controller
 
     try {
-      const res = await fetch('/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: selectedTemplate.id, rawText, provider }),
+      const result = await aiService.parseProject({
+        templateId: selectedTemplate.id,
+        rawText,
+        provider,
+      }, {
         signal: controller.signal,
       })
 
-      if (!res.ok || !res.body) {
-        const json = await res.json().catch(() => ({}))
-        setError(json.error ?? 'Something went wrong. Please try again.')
+      if (!result.ok) {
+        if (result.error.code !== 'aborted') {
+          setError(result.error.message)
+        }
         return
       }
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          let event: any
-          try { event = JSON.parse(line.slice(6)) } catch { continue }
-
-          if (event.type === 'ping') continue
-
-          if (event.type === 'error') {
-            setError(event.message ?? 'Something went wrong. Please try again.')
-            return
-          }
-
-          if (event.type === 'result') {
-            if (event.parseQuality === 'empty') {
-              setError('No data could be extracted. The text may be too short or unrelated to a property listing — try adding more detail.')
-              return
-            }
-            loadParseResult(event.sectionData, event._sections)
-            return
-          }
-        }
-      }
-    } catch (e: any) {
-      if (e.name !== 'AbortError') {
+      loadParseResult(result.data.sectionData, result.data.sectionsRegistry)
+    } catch (e: unknown) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) {
         setError('Network error. Please check your connection and try again.')
       }
     } finally {

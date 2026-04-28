@@ -1,5 +1,34 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveLeadSource } from '@/lib/utils/manifest-contract'
+
+type SourceMetadata = ReturnType<typeof resolveLeadSource>
+
+function normalizeStoredSourceMetadata(
+  value: unknown,
+  formType: string | null | undefined
+): SourceMetadata {
+  if (value && typeof value === 'object') {
+    const metadata = value as Partial<SourceMetadata>
+    if (
+      typeof metadata.id === 'string' &&
+      typeof metadata.label === 'string' &&
+      typeof metadata.kind === 'string' &&
+      typeof metadata.known === 'boolean'
+    ) {
+      return {
+        id: metadata.id,
+        label: metadata.label,
+        kind: metadata.kind,
+        sectionId: typeof metadata.sectionId === 'string' ? metadata.sectionId : undefined,
+        gateId: typeof metadata.gateId === 'string' ? metadata.gateId : undefined,
+        known: metadata.known,
+      }
+    }
+  }
+
+  return resolveLeadSource(null, formType)
+}
 
 /**
  * GET /api/enquiries
@@ -30,7 +59,19 @@ export async function GET() {
     failed: (data ?? []).filter((s: any) => ['failed', 'no_answer'].includes(s.call_status)).length,
   }
 
-  return NextResponse.json({ data: data ?? [], unreadCount, callStats })
+  const enriched = (data ?? []).map((submission: any) => {
+    const deployment = submission.deployments as { project_name?: string } | null
+    const source = normalizeStoredSourceMetadata(submission.source_metadata, submission.form_type)
+    const { source_metadata: _sourceMetadata, ...submissionSummary } = submission
+
+    return {
+      ...submissionSummary,
+      deployments: deployment,
+      source,
+    }
+  })
+
+  return NextResponse.json({ data: enriched, unreadCount, callStats })
 }
 
 /**
@@ -45,7 +86,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await req.json()
+  let body: { id?: unknown }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  const id = typeof body.id === 'string' ? body.id : ''
   if (!id) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   }
