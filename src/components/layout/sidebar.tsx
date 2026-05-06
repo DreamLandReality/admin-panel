@@ -6,104 +6,25 @@ import { cn } from '@/lib/utils/cn'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-    LayoutDashboard,
-    PlusCircle,
-    Layers,
-    MessageSquare,
-    Building2,
-    ChevronLeft,
-    ChevronRight,
-    Sun,
-    Moon,
-    LogOut,
-    Archive,
-} from 'lucide-react'
+    Building2Icon,
+    ChevronLeftIcon,
+    LogOutIcon,
+    MoonIcon,
+    SunIcon,
+    ChevronRightIcon,
+} from '@/components/icons'
 import { useEffect, useMemo, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { createClient } from '@/lib/supabase/client'
 import { Heading } from '@/components/primitives'
 import { Button } from '@/components/ui/button'
-import { getAppConfig } from '@/services/config'
-import { getEnquirySummary } from '@/services/enquiry'
+import { useConfigQuery } from '@/hooks/queries/use-config-query'
+import { useEnquirySummaryQuery } from '@/hooks/queries/use-enquiry-summary-query'
+import type { UserRole } from '@/lib/auth/roles'
+import { getNavItemsForRole, NavItem, isActive } from './nav-item'
+import { PROVIDER_CONFIG } from './provider-config'
 
-const NAV_ITEMS = [
-    { icon: LayoutDashboard, label: 'Sites', href: '/', match: 'exact', group: 'workspace' },
-    { icon: PlusCircle, label: 'New Commission', href: '/deployments/new', match: 'exact', group: 'workspace' },
-    { icon: Layers, label: 'Templates', href: '/templates', match: 'startsWith', group: 'workspace' },
-    { icon: Archive, label: 'Archived', href: '/archived', match: 'startsWith', group: 'workspace' },
-    { icon: MessageSquare, label: 'Enquiry', href: '/enquiry', match: 'startsWith', group: 'system' },
-]
-
-function isActive(item: typeof NAV_ITEMS[0], pathname: string): boolean {
-    if (item.match === 'exact') return pathname === item.href
-    return pathname.startsWith(item.href)
-}
-
-function NavItem({ item, active, isCollapsed, badge }: { item: typeof NAV_ITEMS[0]; active: boolean; isCollapsed: boolean; badge?: number }) {
-    return (
-        <div className="relative group/nav px-3 my-0.5 z-10">
-            <Link
-                href={item.href}
-                className={cn(
-                    'group flex items-center gap-4 h-11 px-3 rounded-lg transition-all duration-500 ease-out border border-transparent',
-                    active
-                        ? 'bg-surface-active text-foreground border-border-hover'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
-                )}
-            >
-                {active && (
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-indicator bg-foreground dark:bg-white rounded-r-full shadow-nav-indicator" />
-                )}
-                <div className={cn(
-                    "relative flex w-6 items-center justify-center shrink-0 transition-transform duration-500 ease-out",
-                    active ? "scale-105" : "group-hover:scale-105 text-foreground-muted dark:text-white/40 group-hover:text-foreground/70 dark:group-hover:text-white/70"
-                )}>
-                    <item.icon size={17} strokeWidth={active ? 1.75 : 1.5} />
-                    {/* Collapsed badge dot */}
-                    {isCollapsed && !!badge && badge > 0 && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-foreground dark:bg-white" />
-                    )}
-                </div>
-                <span
-                    className={cn(
-                        'text-body-sm font-medium tracking-wide whitespace-nowrap transition-all duration-300 flex-1',
-                        isCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100',
-                        active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground/90"
-                    )}
-                >
-                    {item.label}
-                </span>
-                {/* Expanded badge count */}
-                {!isCollapsed && !!badge && badge > 0 && (
-                    <span className="ml-auto shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-foreground dark:bg-white text-background dark:text-black text-[10px] font-bold leading-none px-1">
-                        {badge > 99 ? '99+' : badge}
-                    </span>
-                )}
-            </Link>
-            {isCollapsed && (
-                <div className="invisible opacity-0 group-hover/nav:visible group-hover/nav:opacity-100 absolute left-full ml-1 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-foreground border border-border-hover text-background text-label-lg font-medium tracking-widest uppercase rounded-lg shadow-2xl whitespace-nowrap pointer-events-none transition-all duration-200 z-50">
-                    {item.label}{!!badge && badge > 0 ? ` (${badge})` : ''}
-                </div>
-            )}
-        </div>
-    )
-}
-
-// Provider display config
-const PROVIDER_CONFIG: Record<AiProvider, { label: string; shortLabel: string; dotClass: string }> = {
-    claude: {
-        label: 'Claude',
-        shortLabel: 'C',
-        dotClass: 'bg-foreground dark:bg-white',
-    },
-    gemini: {
-        label: 'Gemini',
-        shortLabel: 'G',
-        dotClass: 'bg-blue-500 dark:bg-blue-400',
-    },
-}
-
-export function Sidebar() {
+export function Sidebar({ role }: { role: UserRole | null }) {
     const { sidebarCollapsed, sidebarMobileOpen, toggleSidebar, closeMobile } = useStore()
     const { provider, setProvider } = useAiProviderStore()
     const pathname = usePathname()
@@ -113,33 +34,29 @@ export function Sidebar() {
 
     const [mounted, setMounted] = useState(false)
     const [userEmail, setUserEmail] = useState<string | null>(null)
-    const [configuredProviders, setConfiguredProviders] = useState<Set<AiProvider>>(new Set())
-    const [unreadEnquiries, setUnreadEnquiries] = useState(0)
+    const appConfigQuery = useConfigQuery()
+    const enquirySummaryQuery = useEnquirySummaryQuery()
+    const navItems = useMemo(() => getNavItemsForRole(role), [role])
+    const configuredProviders = useMemo(() => {
+        const providers = new Set<AiProvider>()
+        const config = appConfigQuery.data
+        if (config?.isAiConfigured) providers.add('claude')
+        if (config?.isGeminiConfigured) providers.add('gemini')
+        return providers
+    }, [appConfigQuery.data])
+    const unreadEnquiries = enquirySummaryQuery.data?.unreadCount ?? 0
 
     useEffect(() => {
         setMounted(true)
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user?.email) setUserEmail(user.email)
         })
-        void getAppConfig()
-            .then((result) => {
-                if (!result.ok) return
-                const config = result.data
-                const providers = new Set<AiProvider>()
-                if (config.isAiConfigured) providers.add('claude')
-                if (config.isGeminiConfigured) providers.add('gemini')
-                setConfiguredProviders(providers)
-                // If stored provider isn't available, fall back to one that is
-                if (providers.size > 0 && !providers.has(provider)) {
-                    setProvider(Array.from(providers)[0])
-                }
-            })
-            .catch(() => { })
-        void getEnquirySummary()
-            .then((result) => { if (result.ok) setUnreadEnquiries(result.data.unreadCount) })
-            .catch(() => { })
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [supabase])
+
+    useEffect(() => {
+        if (configuredProviders.size === 0 || configuredProviders.has(provider)) return
+        setProvider(Array.from(configuredProviders)[0])
+    }, [configuredProviders, provider, setProvider])
 
     const handleSignOut = async () => {
         await supabase.auth.signOut()
@@ -201,7 +118,7 @@ export function Sidebar() {
                         {sidebarCollapsed ? (
                             <div className="text-foreground font-serif text-sm font-semibold tracking-wider">DR</div>
                         ) : (
-                            <Building2 size={16} strokeWidth={1.5} className="text-foreground/80" />
+                            <Building2Icon width={16} height={16} strokeWidth={1.5} className="text-foreground/80" />
                         )}
                     </div>
 
@@ -220,7 +137,7 @@ export function Sidebar() {
                         <span className="text-micro font-medium uppercase tracking-label-lg text-foreground-muted dark:text-white/30">Workspace</span>
                     </div>
 
-                    {NAV_ITEMS.filter(i => i.group === 'workspace').map((item) => (
+                    {navItems.filter(i => i.group === 'workspace').map((item) => (
                         <div key={item.href} onClick={closeMobile}><NavItem item={item} active={isActive(item, pathname)} isCollapsed={sidebarCollapsed} /></div>
                     ))}
 
@@ -229,7 +146,7 @@ export function Sidebar() {
                     <div className={cn("px-7 mb-2 mt-2 transition-all duration-300", sidebarCollapsed ? "opacity-0 h-0 hidden" : "opacity-100 h-auto block")}>
                         <span className="text-micro font-medium uppercase tracking-label-lg text-foreground-muted dark:text-white/30">System</span>
                     </div>
-                    {NAV_ITEMS.filter(i => i.group === 'system').map((item) => (
+                    {navItems.filter(i => i.group === 'system').map((item) => (
                         <div key={item.href} onClick={closeMobile}>
                             <NavItem
                                 item={item}
@@ -286,7 +203,7 @@ export function Sidebar() {
 
                                     {/* Chevron arrow when toggleable */}
                                     {canToggle && !sidebarCollapsed && (
-                                        <ChevronRight size={11} strokeWidth={2} className="shrink-0 text-foreground-muted/40 dark:text-white/25" />
+                                        <ChevronRightIcon width={11} height={11} strokeWidth={2} className="shrink-0 text-foreground-muted/40 dark:text-white/25" />
                                     )}
 
                                     {/* Collapsed: provider initial overlay */}
@@ -315,8 +232,8 @@ export function Sidebar() {
                             >
                                 {mounted && (
                                     <div className="relative w-4 h-4">
-                                        <Sun className="absolute inset-0 h-4 w-4 rotate-0 scale-100 transition-all duration-500 ease-out dark:-rotate-90 dark:scale-0" strokeWidth={1.5} />
-                                        <Moon className="absolute inset-0 h-4 w-4 rotate-90 scale-0 transition-all duration-500 ease-out dark:rotate-0 dark:scale-100" strokeWidth={1.5} />
+                                        <SunIcon className="absolute inset-0 h-4 w-4 rotate-0 scale-100 transition-all duration-500 ease-out dark:-rotate-90 dark:scale-0" strokeWidth={1.5} />
+                                        <MoonIcon className="absolute inset-0 h-4 w-4 rotate-90 scale-0 transition-all duration-500 ease-out dark:rotate-0 dark:scale-100" strokeWidth={1.5} />
                                     </div>
                                 )}
                             </Button>
@@ -349,7 +266,7 @@ export function Sidebar() {
                                     sidebarCollapsed ? "justify-center w-9 shrink-0" : "px-3"
                                 )}
                             >
-                                <LogOut size={16} strokeWidth={1.5} className="shrink-0" />
+                                <LogOutIcon width={16} height={16} strokeWidth={1.5} className="shrink-0" />
                                 {!sidebarCollapsed && <span className="text-label-lg font-medium uppercase tracking-label-xs ml-2.5 truncate">Log Out</span>}
                             </button>
                         </div>
@@ -363,7 +280,7 @@ export function Sidebar() {
                         className="group flex items-center justify-between h-10 px-4 mx-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-all duration-300 cursor-pointer mb-2 border border-transparent hover:border-border-subtle"
                     >
                         <div className="flex w-6 items-center justify-center shrink-0">
-                            <ChevronLeft size={16} strokeWidth={1.5} className={cn("transition-transform duration-500", sidebarCollapsed ? "rotate-180 text-foreground-muted/70 dark:text-white/50" : "rotate-0 text-foreground-muted/50 dark:text-white/30 group-hover:text-foreground-muted dark:group-hover:text-white/60")} />
+                            <ChevronLeftIcon width={16} height={16} strokeWidth={1.5} className={cn("transition-transform duration-500", sidebarCollapsed ? "rotate-180 text-foreground-muted/70 dark:text-white/50" : "rotate-0 text-foreground-muted/50 dark:text-white/30 group-hover:text-foreground-muted dark:group-hover:text-white/60")} />
                         </div>
                     </button>
                 </div>

@@ -1,4 +1,5 @@
 import type { PendingImage } from '@/types'
+import { log } from '@/lib/log'
 import { fetchWithTimeout } from './fetch-with-timeout'
 
 const CONCURRENCY = 4
@@ -8,6 +9,16 @@ export interface UploadResult {
   urlMap: Map<string, string>
   /** blobUrls that failed to upload — callers should abort deploy if non-empty */
   failed: string[]
+}
+
+type ReplacementMap = Map<string, string> | Record<string, string>
+
+function hasReplacements(urlMap: ReplacementMap): boolean {
+  return urlMap instanceof Map ? urlMap.size > 0 : Object.keys(urlMap).length > 0
+}
+
+function getReplacement(urlMap: ReplacementMap, value: string): string | undefined {
+  return urlMap instanceof Map ? urlMap.get(value) : urlMap[value]
 }
 
 /**
@@ -51,7 +62,7 @@ export async function uploadPendingImages(
     chunk.forEach(([, pending], i) => {
       const r = results[i]
       if (r.status === 'rejected') {
-        console.error('[uploadPendingImages] Failed to upload:', pending.r2Key, r.reason)
+        log.error('[uploadPendingImages] Failed to upload:', pending.r2Key, r.reason)
         failed.push(pending.blobUrl)
       }
     })
@@ -64,10 +75,10 @@ export async function uploadPendingImages(
  * Deep-walk any data structure and replace blob URL strings
  * with their R2 public URLs using the urlMap.
  */
-export function replaceBlobUrls<T>(data: T, urlMap: Map<string, string>): T {
-  if (urlMap.size === 0) return data
+export function replaceBlobUrls<T>(data: T, urlMap: ReplacementMap): T {
+  if (!hasReplacements(urlMap)) return data
   if (typeof data === 'string') {
-    return (urlMap.get(data) ?? data) as T
+    return (getReplacement(urlMap, data) ?? data) as T
   }
   if (Array.isArray(data)) {
     return data.map((item) => replaceBlobUrls(item, urlMap)) as T

@@ -2,27 +2,14 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { cn } from '@/lib/utils/cn'
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ImagePlaceholderIcon,
+  SearchIcon,
+  XIcon,
+} from '@/components/icons'
 import { searchIcons, ICON_CATEGORIES, getIconByName, type IconEntry } from './icon-registry'
-
-// ─── IconSvg ─────────────────────────────────────────────────────────────────
-// Renders a lucide icon from its path data
-
-function IconSvg({ paths, className }: { paths: string[]; className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths.map((d, i) => <path key={i} d={d} />)}
-    </svg>
-  )
-}
 
 // ─── IconPickerField ──────────────────────────────────────────────────────────
 
@@ -104,12 +91,9 @@ export function IconPickerField({
         {/* Icon preview */}
         <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-foreground/70">
           {currentEntry ? (
-            <IconSvg paths={currentEntry.paths} className="w-4 h-4" />
+            <currentEntry.Icon className="w-4 h-4" />
           ) : (
-            <svg className="w-4 h-4 text-muted-foreground/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M12 8v8M8 12h8" />
-            </svg>
+            <ImagePlaceholderIcon className="w-4 h-4 text-muted-foreground/30" />
           )}
         </span>
 
@@ -126,17 +110,13 @@ export function IconPickerField({
               onClick={handleClear}
               className="p-0.5 rounded text-muted-foreground/40 hover:text-muted-foreground hover:bg-white/10 transition-colors"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+              <XIcon width="10" height="10" strokeWidth={2} />
             </span>
           )}
-          <svg
+          <ChevronDownIcon
             className={cn('w-3 h-3 text-muted-foreground/40 transition-transform duration-150', open && 'rotate-180')}
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
+            strokeWidth={2}
+          />
         </span>
       </button>
 
@@ -147,9 +127,7 @@ export function IconPickerField({
           {/* Search bar */}
           <div className="p-2 border-b border-border-subtle">
             <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-surface border border-border-subtle">
-              <svg className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
+              <SearchIcon className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" strokeWidth={2} />
               <input
                 ref={searchRef}
                 type="text"
@@ -160,9 +138,7 @@ export function IconPickerField({
               />
               {search && (
                 <button onClick={() => setSearch('')} className="text-muted-foreground/40 hover:text-muted-foreground">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
+                  <XIcon width="10" height="10" strokeWidth={2} />
                 </button>
               )}
             </div>
@@ -209,12 +185,10 @@ export function IconPickerField({
                           : 'text-foreground/60 hover:bg-white/10 hover:text-foreground'
                       )}
                     >
-                      <IconSvg paths={entry.paths} className="w-4 h-4" />
+                      <entry.Icon className="w-4 h-4" />
                       {isSelected && (
                         <span className="absolute top-0.5 right-0.5">
-                          <svg width="6" height="6" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" />
-                          </svg>
+                          <CheckIcon width="6" height="6" strokeWidth={3} />
                         </span>
                       )}
                     </button>
@@ -227,7 +201,7 @@ export function IconPickerField({
           {/* Footer: currently selected */}
           {currentEntry && (
             <div className="px-3 py-2 border-t border-border-subtle flex items-center gap-2">
-              <IconSvg paths={currentEntry.paths} className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+              <currentEntry.Icon className="w-3.5 h-3.5 text-accent flex-shrink-0" />
               <span className="text-[10px] text-muted-foreground">{currentEntry.label}</span>
             </div>
           )}

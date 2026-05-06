@@ -34,8 +34,7 @@ export function DeployTransitionOverlay() {
 
   return (
     <div
-      className="dark fixed inset-0 bg-background z-[9999] transition-opacity duration-200"
-      style={{ opacity: isTransitioning ? 1 : 0 }}
+      className={`dark fixed inset-0 bg-background z-[9999] transition-opacity duration-200 ${isTransitioning ? 'opacity-100' : 'opacity-0'}`}
     />
   )
 }

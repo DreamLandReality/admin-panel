@@ -11,6 +11,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { env } from '@/lib/env'
+import { log } from '@/lib/log'
 
 // R2 Configuration from environment (loaded from .env.local by Next.js)
 const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID
@@ -22,7 +23,7 @@ const R2_PUBLIC_URL = process.env.NEXT_PUBLIC_R2_PUBLIC_URL
 
 // Warn at module load time if R2 is partially configured (credentials set but no public URL)
 if (R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && !R2_PUBLIC_URL) {
-  console.warn('[R2] R2 credentials are set but NEXT_PUBLIC_R2_PUBLIC_URL is missing. Uploads will succeed but public URL generation will fail.')
+  log.warn('[R2] R2 credentials are set but NEXT_PUBLIC_R2_PUBLIC_URL is missing. Uploads will succeed but public URL generation will fail.')
 }
 
 // Lazy getter: whitelisted bucket names (computed at call time, not module load)

@@ -47,25 +47,15 @@ export function R2Image({
   return (
     <>
       {!isLoaded && <Skeleton className={className} />}
-      {width && height ? (
-        <Image
-          src={imageUrl}
-          alt={alt}
-          className={imageClasses}
-          width={width}
-          height={height}
-          onLoad={handleLoad}
-        />
-      ) : (
-        <img
-          src={imageUrl}
-          alt={alt}
-          className={imageClasses}
-          width={width}
-          height={height}
-          onLoad={handleLoad}
-        />
-      )}
+      <Image
+        src={imageUrl}
+        alt={alt}
+        className={imageClasses}
+        width={width ?? 1200}
+        height={height ?? 800}
+        onLoad={handleLoad}
+        unoptimized
+      />
     </>
   )
 }

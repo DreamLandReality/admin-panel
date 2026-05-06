@@ -1,5 +1,6 @@
-import type { CollectionItem, SiteData, TemplateManifest } from '@/types'
+import type { CollectionItem, JsonValue, SiteData, TemplateManifest } from '@/types'
 import { findContactFormSections, findFirstImageInSection } from '@/lib/constants'
+import { isRecord } from '@/lib/api/contracts'
 import {
   filterGateActionsForSections,
   isManifestSectionEnabled,
@@ -8,7 +9,7 @@ import {
 } from '@/lib/utils/manifest-contract'
 
 /**
- * Recursively strip any key ending with __style or __styles from data.
+ * Recursively strip every key ending with __style or __styles from data.
  * These are extracted separately into manifest.styleOverrides so the
  * Astro template can generate static CSS from them at build time.
  */
@@ -130,7 +131,7 @@ export function buildDeployManifest(
   }
 
   // Detect which sections are contact forms (schema-based, not hardcoded ID)
-  const contactFormIds = new Set(findContactFormSections(manifest.sections as any[]))
+  const contactFormIds = new Set(findContactFormSections(manifest.sections))
 
   // ── Sections ──────────────────────────────────────────────────────────────
   if (!Array.isArray(manifest.sections)) {
@@ -146,9 +147,9 @@ export function buildDeployManifest(
 
     // Replace section.data with user-edited data (strip style keys)
     if (sectionDataOnly[section.id] !== undefined) {
-      section.data = stripStyleKeys(sectionDataOnly[section.id]) as Record<string, unknown>
+      section.data = stripStyleKeys(sectionDataOnly[section.id]) as JsonValue
     } else if (section.data) {
-      section.data = stripStyleKeys(section.data) as Record<string, unknown>
+      section.data = stripStyleKeys(section.data) as JsonValue
     }
 
     // Inject contact-form runtime values into ANY section that declares
@@ -165,14 +166,17 @@ export function buildDeployManifest(
 
   // ── Auto-fill seo.image from first available section image if not set ─────
   const seoSection = manifest.sections.find(s =>
-    s.id === 'seo' || (s.schema as any)?.properties?.canonicalUrl !== undefined
+    s.id === 'seo' || s.schema.properties?.canonicalUrl !== undefined
   )
-  const seoData = seoSection?.data as Record<string, unknown> | undefined
+  const seoData = isRecord(seoSection?.data) ? seoSection.data : undefined
   if (seoData && !seoData.image) {
     // Walk all non-SEO sections and pick the first image
     for (const section of manifest.sections) {
       if (section.id === seoSection?.id) continue
-      const img = findFirstImageInSection(section as any)
+      const img = findFirstImageInSection({
+        data: isRecord(section.data) ? section.data : undefined,
+        imageSlots: section.imageSlots,
+      })
       if (img) {
         seoData.image = img
         break
@@ -194,7 +198,7 @@ export function buildDeployManifest(
   // can generate static CSS from them at build time (responsive font sizes etc.)
   const styleOverrides = extractStyleOverrides(sectionDataOnly as Record<string, unknown>)
   if (Object.keys(styleOverrides).length > 0) {
-    ;(manifest as any).styleOverrides = styleOverrides
+    manifest.styleOverrides = styleOverrides
   }
 
   // ── Gate credentials ────────────────────────────────────────────────────

@@ -1,7 +1,10 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { type NextRequest } from 'next/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiError, apiOk } from '@/lib/api/response'
+import { parseJsonRecordBody } from '@/lib/api/request'
 import { buildDraftPreviewHtml } from '@/lib/utils/draft-preview-html'
 import { uploadToPrivateBucket } from '@/lib/utils/r2-storage'
+import { log } from '@/lib/log'
 import puppeteer from 'puppeteer'
 
 /**
@@ -15,22 +18,16 @@ import puppeteer from 'puppeteer'
  * Designed to be called fire-and-forget from the editor after a save.
  */
 export async function POST(request: NextRequest) {
-  const supabase = createClient()
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const bodyResult = await parseJsonRecordBody(request)
+  if (!bodyResult.ok) return bodyResult.response
 
-  let draft_id: string
-  try {
-    ;({ draft_id } = await request.json())
-  } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-  }
-
-  if (!draft_id) {
-    return NextResponse.json({ error: 'draft_id is required' }, { status: 400 })
+  const { draft_id } = bodyResult.data
+  if (!draft_id || typeof draft_id !== 'string') {
+    return apiError('draft_id is required', 400)
   }
 
   const { data: draft, error: fetchError } = await supabase
@@ -41,21 +38,23 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (fetchError || !draft) {
-    return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
+    return apiError('Draft not found', 404)
   }
 
   const html = buildDraftPreviewHtml({
     projectName: draft.project_name ?? 'Untitled',
-    sectionData: (draft.section_data as Record<string, any>) ?? {},
+    sectionData: (draft.section_data as Record<string, unknown>) ?? {},
     templateSlug: draft.template_slug,
   })
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  })
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
 
   try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
+
     const page = await browser.newPage()
     await page.setViewport({ width: 1200, height: 900 })
     // networkidle0 waits for background image to load (if present)
@@ -65,13 +64,27 @@ export async function POST(request: NextRequest) {
     const objectKey = `screenshots/drafts/${draft_id}/preview.png`
     await uploadToPrivateBucket(objectKey, Buffer.from(screenshot), 'image/png')
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('drafts')
       .update({ screenshot_url: objectKey, updated_at: new Date().toISOString() })
       .eq('id', draft_id)
+      .eq('user_id', user.id)
 
-    return NextResponse.json({ ok: true })
+    if (updateError) {
+      return apiError(updateError.message, 500)
+    }
+
+    return apiOk({ ok: true })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Draft screenshot failed'
+    log.event('error', 'draft.screenshot.failed', 'Draft screenshot generation failed', {
+      draftId: draft_id,
+      reason: message,
+    })
+    return apiError(message, 500)
   } finally {
-    await browser.close()
+    if (browser) {
+      await browser.close()
+    }
   }
 }

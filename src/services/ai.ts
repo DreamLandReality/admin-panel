@@ -1,5 +1,6 @@
 import type { AiProvider, AiService, ParseProjectResult } from './types'
-import { errorResult, isRecord, readJson, toServiceError } from './http'
+import { apiExceptionResult, apiRawRequest } from './api-client'
+import { errorResult, isRecord } from './http'
 
 type ParseStreamEvent =
   | { type: 'ping' }
@@ -57,27 +58,24 @@ function parseStreamEvent(line: string): ParseStreamEvent | null {
 
 export const aiService: AiService = {
   async parseProject(input, options) {
+    const responseResult = await apiRawRequest('/api/parse', {
+      method: 'POST',
+      signal: options?.signal,
+      fallback: 'Something went wrong. Please try again.',
+      json: {
+        templateId: input.templateId,
+        rawText: input.rawText,
+        provider: input.provider,
+      },
+    })
+    if (!responseResult.ok) return responseResult
+
+    const response = responseResult.data
+    if (!response.body) {
+      return errorResult('Something went wrong. Please try again.', { status: response.status })
+    }
+
     try {
-      const response = await fetch('/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: options?.signal,
-        body: JSON.stringify({
-          templateId: input.templateId,
-          rawText: input.rawText,
-          provider: input.provider,
-        }),
-      })
-
-      if (!response.ok || !response.body) {
-        const payload = await readJson(response)
-        const message =
-          isRecord(payload) && typeof payload.error === 'string'
-            ? payload.error
-            : 'Something went wrong. Please try again.'
-        return errorResult(message, { status: response.status })
-      }
-
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -116,11 +114,7 @@ export const aiService: AiService = {
 
       return errorResult('AI parse ended before returning a result.')
     } catch (error) {
-      const serviceError = toServiceError(error, 'Network error. Please check your connection and try again.')
-      if (serviceError.code === 'aborted') {
-        return { ok: false, error: serviceError }
-      }
-      return { ok: false, error: serviceError }
+      return apiExceptionResult(error, 'Network error. Please check your connection and try again.')
     }
   },
 }

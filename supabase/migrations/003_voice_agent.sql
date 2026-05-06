@@ -23,10 +23,7 @@ ALTER TABLE form_submissions
 
 ALTER TABLE form_submissions
   ADD COLUMN elevenlabs_conversation_id TEXT,
-  ADD COLUMN call_transcript TEXT,
-  ADD COLUMN call_collected_data JSONB,
-  ADD COLUMN call_attempts INTEGER DEFAULT 0,
-  ADD COLUMN call_duration_seconds INTEGER;
+  ADD COLUMN call_attempts INTEGER DEFAULT 0;
 
 -- Index for active call queries
 CREATE INDEX idx_submissions_call_status

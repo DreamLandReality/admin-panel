@@ -1,9 +1,10 @@
 import { type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { createClient } from '@/lib/supabase/server'
+import { requireCapability } from '@/lib/api/auth'
 import { env } from '@/lib/env'
+import { log } from '@/lib/log'
 import { runDeployPipeline, runRedeployPipeline } from '@/lib/deploy/pipeline'
-import type { Deployment, Template, DeployEvent } from '@/types'
+import type { Deployment, DeployEvent, Template, TemplateConfig, TemplateManifest } from '@/types'
 
 type RouteContext = { params: { id: string } }
 
@@ -17,6 +18,55 @@ function createServiceClient() {
 
 function sseEvent(event: DeployEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
+}
+
+function sseResponse(event: DeployEvent): Response {
+  return new Response(sseEvent(event), {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  })
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
+}
+
+function buildFallbackTemplate(deployment: Deployment): Template {
+  const manifest = deployment.template_manifest as TemplateManifest
+  const config: TemplateConfig = {
+    id: deployment.template_id,
+    name: deployment.project_name,
+    description: 'Frozen deployment template snapshot',
+    category: 'luxury',
+    buildCommand: 'npm run build',
+    outputDirectory: 'dist',
+    previewUrl: null,
+    version: deployment.template_version,
+    sectionCount: manifest.sections.length,
+    previewRuntimeVersion: 'unknown',
+  }
+
+  return {
+    id: deployment.template_id,
+    slug: manifest.templateId ?? deployment.slug,
+    name: deployment.project_name,
+    description: null,
+    category: config.category,
+    framework: 'astro',
+    github_repo: `${env.GITHUB_ORG}/template-${manifest.templateId ?? 'unknown'}`,
+    manifest,
+    config,
+    default_data: null,
+    preview_url: null,
+    preview_image: null,
+    version: deployment.template_version,
+    is_active: false,
+    created_at: deployment.created_at,
+    updated_at: deployment.updated_at,
+  }
 }
 
 export const dynamic = 'force-dynamic'
@@ -35,11 +85,11 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(_req: NextRequest, { params }: RouteContext) {
   // ── 1. Auth ────────────────────────────────────────────────────────────────
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return new Response('Unauthorized', { status: 401 })
+  const auth = await requireCapability('canManageSites')
+  if (!auth.ok) {
+    return new Response(auth.response.status === 401 ? 'Unauthorized' : 'Forbidden', { status: auth.response.status })
   }
+  const { user } = auth
 
   const svc = createServiceClient()
 
@@ -53,42 +103,31 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
   if (depError || !deployment) {
     return new Response('Deployment not found', { status: 404 })
   }
+  const typedDeployment = deployment as unknown as Deployment
 
   // Only the owner can stream their own deployment
-  if (deployment.deployed_by !== user.id) {
+  if (typedDeployment.deployed_by !== user.id) {
     return new Response('Forbidden', { status: 403 })
   }
 
   // If already live or failed — send a synthetic done/error event and close
-  if (deployment.status === 'live') {
+  if (typedDeployment.status === 'live') {
     const event: DeployEvent = {
       step: 'cf_build',
       status: 'done',
       message: 'Site is already live',
-      data: { siteUrl: (deployment as any).stable_url ?? deployment.live_url ?? undefined },
+      data: { siteUrl: typedDeployment.stable_url ?? typedDeployment.live_url ?? undefined },
     }
-    return new Response(`data: ${JSON.stringify(event)}\n\n`, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    })
+    return sseResponse(event)
   }
 
-  if (deployment.status === 'failed') {
+  if (typedDeployment.status === 'failed') {
     const event: DeployEvent = {
       step: 'cf_build',
       status: 'error',
-      message: deployment.error_message ?? 'Deployment failed',
+      message: typedDeployment.error_message ?? 'Deployment failed',
     }
-    return new Response(`data: ${JSON.stringify(event)}\n\n`, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    })
+    return sseResponse(event)
   }
 
   // ── 3. Fetch template (fall back to frozen manifest if deleted) ───────────
@@ -97,37 +136,18 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
   const { data: liveTemplate } = await svc
     .from('templates')
     .select('*')
-    .eq('id', deployment.template_id)
+    .eq('id', typedDeployment.template_id)
     .maybeSingle()
 
   if (liveTemplate) {
     template = liveTemplate as unknown as Template
   } else {
     // Template was deleted — reconstruct minimal object from frozen snapshot
-    const manifest = deployment.template_manifest as any
-    template = {
-      id: deployment.template_id,
-      slug: manifest?.templateId ?? deployment.slug,
-      name: deployment.project_name,
-      description: null,
-      category: 'luxury',
-      framework: 'astro',
-      github_repo: `${env.GITHUB_ORG}/template-${manifest?.templateId ?? 'unknown'}`,
-      manifest,
-      config: {} as any,
-      default_data: null,
-      preview_url: null,
-      preview_image: null,
-      version: deployment.template_version,
-      is_active: false,
-      created_at: deployment.created_at,
-      updated_at: deployment.updated_at,
-    }
+    template = buildFallbackTemplate(typedDeployment)
   }
 
   // ── 4. Stream pipeline ────────────────────────────────────────────────────
-  const isRepublish = !!deployment.github_repo
-  const typedDeployment = deployment as unknown as Deployment
+  const isRepublish = !!typedDeployment.github_repo
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -147,20 +167,20 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
         } else {
           await runDeployPipeline(typedDeployment, template, svc, emit)
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Mark as failed if pipeline threw without already handling it
         const { error: updateError } = await svc
           .from('deployments')
           .update({
             status: 'failed',
-            error_message: err.message ?? 'Unknown error',
+            error_message: getErrorMessage(err),
             updated_at: new Date().toISOString(),
           })
-          .eq('id', deployment.id)
+          .eq('id', typedDeployment.id)
           .in('status', ['deploying', 'building'])
 
         if (updateError) {
-          console.error(`[Stream] Failed to mark deployment ${deployment.id} as failed:`, updateError.message)
+          log.error(`[Stream] Failed to mark deployment ${typedDeployment.id} as failed:`, updateError.message)
         }
       } finally {
         try {

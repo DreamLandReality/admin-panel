@@ -8,8 +8,10 @@ import { useEditorStore } from '@/stores/editor-store'
 import { resolveAllSectionStyles } from '@/lib/utils/style-defaults'
 import { buildPageList } from '@/lib/utils/page-list'
 import { resolveReferences } from '@/lib/utils/collection-resolver'
+import { replaceBlobUrls } from '@/lib/utils/upload-pending-images'
 import { getIframeOrigin } from '@/lib/utils/iframe'
 import { getManifestDefaultPageId } from '@/lib/utils/manifest-contract'
+import { isRuntimeToParentMessage, type ParentToRuntimeMessage } from '@/lib/preview/messages'
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback'
 import { Spinner } from '@/components/primitives'
 import type { Collection } from '@/types'
@@ -20,18 +22,6 @@ const VIEWPORT_WIDTHS: Record<string, number> = {
   mobile: 375,
 }
 
-/** Deep-walk data and replace blob URL strings with their data URL equivalents */
-function deepReplaceBlobUrls(data: any, dataUrls: Record<string, string>): any {
-  if (typeof data === 'string') return dataUrls[data] ?? data
-  if (Array.isArray(data)) return data.map((item) => deepReplaceBlobUrls(item, dataUrls))
-  if (data !== null && typeof data === 'object') {
-    return Object.fromEntries(
-      Object.entries(data).map(([k, v]) => [k, deepReplaceBlobUrls(v, dataUrls)])
-    )
-  }
-  return data
-}
-
 interface PreviewCanvasProps {
   templatePreviewUrl: string
   iframeRef: React.RefObject<HTMLIFrameElement>
@@ -39,6 +29,7 @@ interface PreviewCanvasProps {
 
 export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreviewUrl, iframeRef }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
+  const previewShellRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [iframeReady, setIframeReady] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -153,7 +144,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
 
   // Map an iframe pathname back to a pageId so the admin panel can sync activePage
   // when the runtime sends a navigate-request instead of navigating directly.
-  function mapPathnameToPageId(pathname: string): string {
+  const mapPathnameToPageId = useCallback((pathname: string): string => {
     const manifest = selectedTemplate?.manifest
     const defaultPageId = getManifestDefaultPageId(manifest)
     if (pathname === '/' || pathname === '') return defaultPageId
@@ -172,7 +163,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
     }
     // Fallback: strip leading slash
     return pathname.slice(1) || defaultPageId
-  }
+  }, [selectedTemplate])
 
   const deviceWidth = VIEWPORT_WIDTHS[viewport] ?? 1440
 
@@ -190,6 +181,14 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
     if (canvasRef.current) observer.observe(canvasRef.current)
     return () => observer.disconnect()
   }, [updateScale])
+
+  useEffect(() => {
+    const shell = previewShellRef.current
+    if (!shell) return
+    shell.style.setProperty('--preview-device-width', `${deviceWidth}px`)
+    shell.style.setProperty('--preview-scale', String(scale))
+    shell.style.setProperty('--preview-collapsed-margin', `-${(1 - scale) * 100}vh`)
+  }, [deviceWidth, scale])
 
   // Reload iframe when active page changes
   useEffect(() => {
@@ -318,14 +317,19 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
     // Blob URLs are origin-bound and can't be loaded by a cross-origin iframe.
     const dataUrlMap = useEditorStore.getState().dataUrls
     const finalData = Object.keys(dataUrlMap).length > 0
-      ? deepReplaceBlobUrls(resolvedData, dataUrlMap)
+      ? replaceBlobUrls(resolvedData, dataUrlMap)
       : resolvedData
 
-    iframe.contentWindow.postMessage(
-      { type: 'full-update', data: finalData, sections: sectionsRegistry, editabilityMap: useDeployStore.getState().editabilityMap, isViewOnly, viewport: useUiStore.getState().viewport },
-      getIframeOrigin(effectivePreviewUrl)
-    )
-  }, [sectionData, collectionData, sectionsRegistry, selectedTemplate, activePage, effectivePreviewUrl, dataUrls])
+    const message: ParentToRuntimeMessage = {
+      type: 'full-update',
+      data: finalData,
+      sections: sectionsRegistry,
+      editabilityMap: useDeployStore.getState().editabilityMap,
+      isViewOnly,
+      viewport: useUiStore.getState().viewport,
+    }
+    iframe.contentWindow.postMessage(message, getIframeOrigin(effectivePreviewUrl))
+  }, [sectionData, collectionData, sectionsRegistry, selectedTemplate, activePage, effectivePreviewUrl, iframeRef, isViewOnly])
 
   const debouncedSendFullUpdate = useDebouncedCallback(sendFullUpdate, 80)
 
@@ -372,7 +376,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
       }
 
       const msg = event.data
-      if (!msg || typeof msg !== 'object' || !msg.type) return
+      if (!isRuntimeToParentMessage(msg)) return
 
       switch (msg.type) {
         case 'ready':
@@ -465,7 +469,7 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
 
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [sendFullUpdate, updateField, routeDetailPageUpdate, setSelection, clearSelection, baseOrigin])
+  }, [sendFullUpdate, updateField, routeDetailPageUpdate, setSelection, clearSelection, baseOrigin, activePage, mapPathnameToPageId])
 
   // Re-send data to iframe whenever sectionData/sectionsRegistry/dataUrls changes.
   // Optimization: if the change was a simple field edit (tracked via lastFieldUpdate),
@@ -489,10 +493,8 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
       prevFieldUpdateRef.current = lfu
       const iframe = iframeRef.current
       if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage(
-          { type: 'field-update', sectionId: lfu.sectionId, field: lfu.field, value: lfu.value },
-          getIframeOrigin(effectivePreviewUrl)
-        )
+        const message: ParentToRuntimeMessage = { type: 'field-update', sectionId: lfu.sectionId, field: lfu.field, value: lfu.value }
+        iframe.contentWindow.postMessage(message, getIframeOrigin(effectivePreviewUrl))
       }
       return
     }
@@ -500,17 +502,15 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
 
     // Fallback: send full update for bulk operations, section toggles, etc.
     debouncedSendFullUpdate()
-  }, [sectionData, sectionsRegistry, dataUrls, iframeReady, debouncedSendFullUpdate, lastFieldUpdate, effectivePreviewUrl])
+  }, [sectionData, sectionsRegistry, dataUrls, iframeReady, debouncedSendFullUpdate, lastFieldUpdate, effectivePreviewUrl, iframeRef])
 
   // Notify iframe when viewport changes so the runtime can re-apply responsive styles.
   // Covers ALL sources of viewport change (toolbar buttons AND responsive slider tabs).
   useEffect(() => {
     if (!iframeReady) return
-    iframeRef.current?.contentWindow?.postMessage(
-      { type: 'viewport-change', viewport },
-      getIframeOrigin(effectivePreviewUrl)
-    )
-  }, [viewport, iframeReady, effectivePreviewUrl])
+    const message: ParentToRuntimeMessage = { type: 'viewport-change', viewport }
+    iframeRef.current?.contentWindow?.postMessage(message, getIframeOrigin(effectivePreviewUrl))
+  }, [viewport, iframeReady, effectivePreviewUrl, iframeRef])
 
   // Re-sync iframe when switching back from data mode (data may have changed while iframe was hidden)
   const panelMode = useUiStore((s) => s.panelMode)
@@ -534,11 +534,9 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
         scrollTarget = `detail:${parts[parts.length - 1]}`
       }
     }
-    iframeRef.current?.contentWindow?.postMessage(
-      { type: 'scroll-to-section', sectionId: scrollTarget },
-      getIframeOrigin(effectivePreviewUrl)
-    )
-  }, [selectedSectionId, iframeReady, effectivePreviewUrl])
+    const message: ParentToRuntimeMessage = { type: 'scroll-to-section', sectionId: scrollTarget }
+    iframeRef.current?.contentWindow?.postMessage(message, getIframeOrigin(effectivePreviewUrl))
+  }, [selectedSectionId, iframeReady, effectivePreviewUrl, iframeRef])
 
   // Fallback: if preview-runtime doesn't send 'ready' within 800ms of iframe load, force ready
   function handleIframeLoad() {
@@ -575,10 +573,8 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
     reader.onload = () => {
       const dataUrl = reader.result as string
       setDataUrl(blobUrl, dataUrl)
-      iframe?.contentWindow?.postMessage(
-        { type: 'field-update', sectionId, field, value: dataUrl },
-        getIframeOrigin(effectivePreviewUrl)
-      )
+      const message: ParentToRuntimeMessage = { type: 'field-update', sectionId, field, value: dataUrl }
+      iframe?.contentWindow?.postMessage(message, getIframeOrigin(effectivePreviewUrl))
     }
     reader.readAsDataURL(file)
 
@@ -592,22 +588,15 @@ export const PreviewCanvas = React.memo(function PreviewCanvas({ templatePreview
   return (
     <div ref={canvasRef} className="relative z-0 flex flex-1 min-w-0 items-start justify-center overflow-auto bg-surface px-6 py-6">
       <div
-        style={{
-          width: `${deviceWidth}px`,
-          height: '100vh',
-          transformOrigin: 'top center',
-          transform: `scale(${scale})`,
-          // Collapse the unused layout space below the scaled-down iframe
-          marginBottom: `-${(1 - scale) * 100}vh`,
-        }}
-        className="relative z-0 shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]"
+        ref={previewShellRef}
+        className="relative z-0 h-screen w-[var(--preview-device-width)] origin-top scale-[var(--preview-scale)] mb-[var(--preview-collapsed-margin)] [--preview-collapsed-margin:-0vh] [--preview-device-width:1440px] [--preview-scale:1] shadow-2xl transition-all duration-500 ease-out-expo"
       >
         <iframe
           ref={iframeRef}
           src={iframeSrc}
           title="Template Preview"
           onLoad={handleIframeLoad}
-          style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+          className="block h-full w-full border-0"
         />
 
         {!iframeReady && templatePreviewUrl && (

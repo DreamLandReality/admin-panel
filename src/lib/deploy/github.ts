@@ -1,4 +1,5 @@
 import { env } from '@/lib/env'
+import { log } from '@/lib/log'
 
 const GITHUB_API = 'https://api.github.com'
 
@@ -10,6 +11,14 @@ function githubHeaders() {
   }
 }
 
+function getApiMessage(body: unknown, fallback: string): string {
+  if (body && typeof body === 'object' && 'message' in body) {
+    const message = (body as { message?: unknown }).message
+    if (typeof message === 'string' && message.length > 0) return message
+  }
+  return fallback
+}
+
 /** Create a new repo from a GitHub template repo. */
 export async function createRepoFromTemplate(
   templateRepo: string,
@@ -17,7 +26,7 @@ export async function createRepoFromTemplate(
   description: string
 ): Promise<{ repoUrl: string; fullName: string }> {
   const endpoint = `${GITHUB_API}/repos/${env.GITHUB_ORG}/${templateRepo}/generate`
-  console.log(`[GitHub] createRepoFromTemplate: org=${env.GITHUB_ORG} template=${templateRepo} newName=${newRepoName}`)
+  log.info(`[GitHub] createRepoFromTemplate: org=${env.GITHUB_ORG} template=${templateRepo} newName=${newRepoName}`)
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -33,14 +42,14 @@ export async function createRepoFromTemplate(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    const msg = (body as any)?.message ?? res.statusText
+    const msg = getApiMessage(body, res.statusText)
     // Log the full error body so we can diagnose 422 "Name already exists" vs other causes
-    console.error(`[GitHub] createRepoFromTemplate failed (${res.status}): endpoint=${endpoint}`, JSON.stringify(body))
+    log.error(`[GitHub] createRepoFromTemplate failed (${res.status}): endpoint=${endpoint}`, JSON.stringify(body))
     throw new Error(`GitHub repo creation failed (${res.status}): ${msg}`)
   }
 
   const data = (await res.json()) as { html_url: string; full_name: string }
-  console.log(`[GitHub] createRepoFromTemplate succeeded: fullName=${data.full_name}`)
+  log.info(`[GitHub] createRepoFromTemplate succeeded: fullName=${data.full_name}`)
   return { repoUrl: data.html_url, fullName: data.full_name }
 }
 
@@ -49,7 +58,7 @@ export async function repoExists(repoFullName: string): Promise<boolean> {
   const res = await fetch(`${GITHUB_API}/repos/${repoFullName}`, {
     headers: githubHeaders(),
   })
-  console.log(`[GitHub] repoExists(${repoFullName}): status=${res.status}`)
+  log.info(`[GitHub] repoExists(${repoFullName}): status=${res.status}`)
   if (res.status === 401 || res.status === 403) {
     throw new Error(`GitHub authentication failed (${res.status}): check GITHUB_TOKEN`)
   }
@@ -167,7 +176,7 @@ export async function updateFileContent(
     }
 
     const body = await res.json().catch(() => ({}))
-    const msg = (body as any)?.message ?? res.statusText
+    const msg = getApiMessage(body, res.statusText)
     throw new Error(`GitHub PUT contents failed (${res.status}): ${msg}`)
   }
 }

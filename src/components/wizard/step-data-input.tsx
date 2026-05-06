@@ -8,8 +8,10 @@ import { Spinner, Heading } from '@/components/primitives'
 import { TextInput, TextArea } from '@/components/forms'
 import { Skeleton } from '@/components/ui'
 import { WarningCallout } from '@/components/feedback/WarningCallout'
-import { aiService } from '@/services/ai'
-import { templateService } from '@/services/template'
+import { useAiParseMutation } from '@/hooks/mutations/use-ai-parse-mutation'
+import { useProjectNameCheckMutation } from '@/hooks/mutations/use-project-name-check'
+import { log } from '@/lib/log'
+import { ArrowRightIcon, ChevronLeftIcon, UploadIcon } from '@/components/icons'
 
 const MAX_CHARS = 50_000
 const WARN_CHARS = 45_000
@@ -17,35 +19,35 @@ const MAX_PDF_BYTES = 30 * 1024 * 1024 // 30 MB — client-side extraction, no s
 
 /** Extract text from a PDF entirely in the browser — no file sent to server. */
 async function extractPdfText(file: File): Promise<{ text: string }> {
-  console.log('[pdf] starting extraction', { name: file.name, size: file.size, type: file.type })
+  log.info('[pdf] starting extraction', { name: file.name, size: file.size, type: file.type })
 
   let pdfjs: any
   try {
     pdfjs = await import('pdfjs-dist')
-    console.log('[pdf] pdfjs-dist imported, version:', pdfjs.version)
+    log.info('[pdf] pdfjs-dist imported, version:', pdfjs.version)
   } catch (err) {
-    console.error('[pdf] failed to import pdfjs-dist:', err)
+    log.error('[pdf] failed to import pdfjs-dist:', err)
     throw err
   }
 
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
-  console.log('[pdf] workerSrc set to /pdf.worker.min.mjs')
+  log.info('[pdf] workerSrc set to /pdf.worker.min.js')
 
   let data: Uint8Array
   try {
     data = new Uint8Array(await file.arrayBuffer())
-    console.log('[pdf] file read into buffer, bytes:', data.byteLength)
+    log.info('[pdf] file read into buffer, bytes:', data.byteLength)
   } catch (err) {
-    console.error('[pdf] failed to read file into ArrayBuffer:', err)
+    log.error('[pdf] failed to read file into ArrayBuffer:', err)
     throw err
   }
 
   let pdf: any
   try {
     pdf = await pdfjs.getDocument({ data }).promise
-    console.log('[pdf] document loaded, pages:', pdf.numPages)
+    log.info('[pdf] document loaded, pages:', pdf.numPages)
   } catch (err) {
-    console.error('[pdf] getDocument failed:', err)
+    log.error('[pdf] getDocument failed:', err)
     throw err
   }
 
@@ -55,31 +57,27 @@ async function extractPdfText(file: File): Promise<{ text: string }> {
       const page = await pdf.getPage(i)
       const content = await page.getTextContent()
       const pageText = content.items.map((item: any) => ('str' in item ? item.str : '')).join(' ')
-      console.log(`[pdf] page ${i}/${pdf.numPages} extracted, chars: ${pageText.length}`)
+      log.info(`[pdf] page ${i}/${pdf.numPages} extracted, chars: ${pageText.length}`)
       pages.push(pageText)
     } catch (err) {
-      console.error(`[pdf] failed on page ${i}:`, err)
+      log.error(`[pdf] failed on page ${i}:`, err)
       throw err
     }
   }
 
   const text = pages.join('\n')
-  console.log('[pdf] extraction complete, total chars:', text.length)
+  log.info('[pdf] extraction complete, total chars:', text.length)
   return { text }
 }
 
 type PdfStatus = 'idle' | 'extracting' | 'done' | 'error'
 
 const BackArrow = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-    <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+  <ChevronLeftIcon width={14} height={14} strokeWidth={1.4} />
 )
 
 const ForwardArrow = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-    <path d="M2 6h8M7 3l3 3-3 3" />
-  </svg>
+  <ArrowRightIcon width={12} height={12} strokeWidth={1.5} />
 )
 
 /** Shared footer row: back button on the left, custom actions on the right */
@@ -129,12 +127,12 @@ export function StepDataInput({
   const [stage, setStage] = useState<'name' | 'description'>(projectName ? 'description' : 'name')
   const [localName, setLocalName] = useState(projectName)
   const [nameError, setNameError] = useState('')
-  const [nameCheckLoading, setNameCheckLoading] = useState(false)
   const nameCheckAbortRef = useRef<AbortController | null>(null)
 
-  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const aiParseMutation = useAiParseMutation()
+  const projectNameCheckMutation = useProjectNameCheckMutation()
 
   const [pdfStatus, setPdfStatus] = useState<PdfStatus>('idle')
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -154,6 +152,8 @@ export function StepDataInput({
   const charCount = rawText.length
   const isOverLimit = charCount > MAX_CHARS
   const isNearLimit = charCount > WARN_CHARS && !isOverLimit
+  const isLoading = aiParseMutation.isPending
+  const nameCheckLoading = projectNameCheckMutation.isPending
   // Parse is enabled only if the currently-selected provider is configured
   const isCurrentProviderConfigured = provider === 'gemini' ? isGeminiConfigured : isAiConfigured
   const canParse = isCurrentProviderConfigured && rawText.trim().length > 0 && !isOverLimit && !isLoading
@@ -168,11 +168,10 @@ export function StepDataInput({
     nameCheckAbortRef.current?.abort()
     const controller = new AbortController()
     nameCheckAbortRef.current = controller
-    setNameCheckLoading(true)
     setNameError('')
 
     try {
-      const result = await templateService.checkProjectName(trimmed, { signal: controller.signal })
+      const result = await projectNameCheckMutation.mutateAsync({ name: trimmed, signal: controller.signal })
       if (result.ok && result.data.exists) {
         setNameError(
           result.data.type === 'deployment'
@@ -184,7 +183,7 @@ export function StepDataInput({
     } catch {
       // Network error — allow proceeding
     } finally {
-      setNameCheckLoading(false)
+      nameCheckAbortRef.current = null
     }
 
     setProjectName(trimmed)
@@ -193,18 +192,16 @@ export function StepDataInput({
 
   async function handleParse() {
     if (!selectedTemplate || !canParse) return
-    setIsLoading(true)
     setError(null)
 
     const controller = new AbortController()
     abortControllerRef.current = controller
 
     try {
-      const result = await aiService.parseProject({
+      const result = await aiParseMutation.mutateAsync({
         templateId: selectedTemplate.id,
         rawText,
         provider,
-      }, {
         signal: controller.signal,
       })
 
@@ -222,7 +219,6 @@ export function StepDataInput({
       }
     } finally {
       abortControllerRef.current = null
-      setIsLoading(false)
     }
   }
 
@@ -254,7 +250,7 @@ export function StepDataInput({
 
     if (file.size > MAX_PDF_BYTES) {
       setPdfStatus('error')
-      setPdfError('File is too large. Maximum size is 4 MB.')
+      setPdfError('File is too large. Maximum size is 30 MB.')
       return
     }
 
@@ -275,7 +271,7 @@ export function StepDataInput({
       if (truncated) setPdfTruncated(true)
       setPdfStatus('done')
     } catch (err: any) {
-      console.error('[pdf] extraction failed:', err)
+      log.error('[pdf] extraction failed:', err)
       setPdfStatus('error')
       setPdfError('Could not read this PDF. The file may be corrupted or password-protected.')
     }
@@ -362,9 +358,7 @@ export function StepDataInput({
               </>
             ) : (
               <>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6.5 8.5V2M3.5 5l3-3 3 3M2 10.5h9" />
-                </svg>
+                <UploadIcon width={13} height={13} strokeWidth={1.4} />
                 Upload PDF
               </>
             )}

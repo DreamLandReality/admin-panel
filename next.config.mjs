@@ -9,7 +9,7 @@ const nextConfig = {
   },
   eslint: {
     dirs: ['src'],
-    ignoreDuringBuilds: true, // remove after T-AP cleanup passes lint clean
+    ignoreDuringBuilds: false,
   },
   images: {
     remotePatterns: [

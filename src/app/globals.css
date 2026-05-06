@@ -4,81 +4,89 @@
 
 @layer base {
   :root {
-    --background: 0 0% 98%;      /* #FAFAFA */
-    --surface: 0 0% 100%;        /* #FFFFFF */
-    --surface-hover: 0 0% 96%;   /* #F5F5F5 hover equivalent to black/4 */
-    --surface-active: 0 0% 92%;  /* #EBEBEB active equivalent to black/8 */
-    --foreground: 222 47% 11%;   /* #0F172A */
-    --foreground-muted: 215 14% 65%; /* #94A3B8 */
-    --foreground-inverse: 0 0% 93%; /* #EDEDED */
+    --background: 0 0% 98%;
+    --surface: 0 0% 100%;
+    --surface-hover: 0 0% 96%;
+    --surface-active: 0 0% 92%;
+    --foreground: 222 47% 11%;
+    --foreground-muted: 215 14% 65%;
+    --foreground-inverse: 0 0% 93%;
     
-    --accent: 36 38% 63%;        /* #C6A87C */
+    --accent: 36 38% 63%;
     --accent-foreground: 0 0% 100%;
-    --accent-hover: 36 30% 55%;  /* darker gold */
-    --accent-muted: 36 38% 63%;  /* with opacity later */
+    --accent-hover: 36 30% 55%;
+    --accent-muted: 36 38% 63%;
     
-    --border: 214 32% 91%;       /* #E2E8F0 */
+    --border: 214 32% 91%;
     --border-hover: 214 32% 80%;
-    --border-subtle: 214 32% 95%; /* Lighter border explicitly for list items, cards */
+    --border-subtle: 214 32% 95%;
     
     /* Sidebar is always dark */
-    --sidebar-bg: 222 47% 11%;   /* #0F172A */
-    --sidebar-text: 215 14% 65%; /* Gray 500 equivalent */
+    --sidebar-bg: 222 47% 11%;
+    --sidebar-text: 215 14% 65%;
     --sidebar-text-active: 0 0% 100%;
-    --sidebar-accent: 36 38% 63%; /* #C6A87C */
+    --sidebar-accent: 36 38% 63%;
     
     /* Status colors */
-    --success: 142 71% 45%;      /* #22C55E */
-    --success-bg: 141 84% 93%;   /* #DCFCE7 green-100 */
-    --warning: 38 92% 50%;       /* #F59E0B */
-    --warning-bg: 48 96% 89%;    /* #FEF3C7 amber-100 */
-    --error: 0 84% 60%;          /* #EF4444 */
-    --error-bg: 0 93% 94%;       /* #FEE2E2 red-100 */
-    --info: 217 91% 60%;         /* #3B82F6 */
-    --info-bg: 214 100% 91%;     /* #DBEAFE blue-100 */
+    --success: 142 71% 45%;
+    --success-bg: 141 84% 93%;
+    --warning: 38 92% 50%;
+    --warning-bg: 48 96% 89%;
+    --error: 0 84% 60%;
+    --error-bg: 0 93% 94%;
+    --info: 217 91% 60%;
+    --info-bg: 214 100% 91%;
     
     /* Shadows */
-    --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
-    --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.1);
-    --shadow-glow: 0 0 15px rgba(198, 168, 124, 0.3);
-    --shadow-nav-indicator: 0 0 8px rgba(0,0,0,0.15);
-    --shadow-ping-ring: 0 0 8px rgba(0,0,0,0.1);
-    --shadow-ping-dot: 0 0 4px rgba(0,0,0,0.2);
+    --shadow-soft: 0 4px 20px -2px rgb(0 0 0 / 0.05);
+    --shadow-float: 0 20px 40px -5px rgb(0 0 0 / 0.1);
+    --shadow-glow: 0 0 15px hsl(var(--accent) / 0.3);
+    --shadow-modal: 0 32px 64px -16px rgb(0 0 0 / 0.4);
+    --shadow-nav-indicator: 0 0 8px rgb(0 0 0 / 0.15);
+    --shadow-ping-ring: 0 0 8px rgb(0 0 0 / 0.1);
+    --shadow-ping-dot: 0 0 4px rgb(0 0 0 / 0.2);
+    --shadow-lead-dot: 0 0 4px hsl(var(--warning) / 0.5);
+
+    /* Background images */
+    --background-login-dot-pattern: radial-gradient(circle at center, hsl(var(--foreground-muted)) 1px, transparent 1px);
+    --background-deploy-page: radial-gradient(ellipse 120% 80% at 50% -10%, hsl(var(--surface)) 0%, hsl(var(--background)) 55%);
+    --shimmer-highlight: rgb(0 0 0 / 0.05);
     
     --radius-md: 0.5rem;   /* 8px */
     --radius-lg: 0.75rem;  /* 12px */
 
-    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-    --font-serif: 'Playfair Display', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+    --font-sans: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   }
 
   .dark {
-    --background: 240 10% 4%;    /* #09090B */
-    --surface: 0 0% 7%;          /* #121212 */
-    --surface-hover: 0 0% 10%;   /* surface hover, equivalent to white/3 or /4 */
-    --surface-active: 0 0% 15%;  /* equivalent to white/8 */
-    --foreground: 0 0% 93%;      /* #EDEDED */
-    --foreground-muted: 0 0% 45%;/* #737373 */
-    --foreground-inverse: 222 47% 11%; /* #0F172A */
+    --background: 240 10% 4%;
+    --surface: 0 0% 7%;
+    --surface-hover: 0 0% 10%;
+    --surface-active: 0 0% 15%;
+    --foreground: 0 0% 93%;
+    --foreground-muted: 0 0% 45%;
+    --foreground-inverse: 222 47% 11%;
 
-    --border: 0 0% 15%;          /* Better definition than 100% white with alpha applied late */
+    --border: 0 0% 15%;
     --border-hover: 0 0% 20%;  
     --border-subtle: 0 0% 10%;
 
     /* Sidebar matches background in dark mode */
-    --sidebar-bg: 240 10% 4%;    /* #09090B */
+    --sidebar-bg: 240 10% 4%;
 
     /* Editor-specific surfaces */
-    --editor-bg: 240 6% 4%;         /* #0a0a0b */
-    --editor-surface: 240 4% 6%;    /* #0f0f10 */
-    --editor-dropdown: 240 3% 10%;  /* #1a1a1c */
+    --editor-bg: 240 6% 4%;
+    --editor-surface: 240 4% 6%;
+    --editor-dropdown: 240 3% 10%;
 
-    --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
-    --shadow-float: 0 20px 40px -5px rgba(0, 0, 0, 0.5);
-    --shadow-glow: 0 0 15px rgba(198, 168, 124, 0.15);
-    --shadow-nav-indicator: 0 0 8px rgba(255,255,255,0.4);
-    --shadow-ping-ring: 0 0 8px rgba(255,255,255,0.6);
-    --shadow-ping-dot: 0 0 4px rgba(255,255,255,0.8);
+    --shadow-soft: 0 4px 20px -2px rgb(0 0 0 / 0.3);
+    --shadow-float: 0 20px 40px -5px rgb(0 0 0 / 0.5);
+    --shadow-glow: 0 0 15px hsl(var(--accent) / 0.15);
+    --shadow-nav-indicator: 0 0 8px rgb(255 255 255 / 0.4);
+    --shadow-ping-ring: 0 0 8px rgb(255 255 255 / 0.6);
+    --shadow-ping-dot: 0 0 4px rgb(255 255 255 / 0.8);
   }
 }
 
@@ -111,11 +119,10 @@
 }
 
 .animate-shimmer {
-  /* Light mode: subtle dark wave over gray base */
   background: linear-gradient(
     90deg,
     transparent 25%,
-    rgba(0, 0, 0, 0.05) 50%,
+    var(--shimmer-highlight) 50%,
     transparent 75%
   );
   background-size: 200% 100%;
@@ -123,14 +130,7 @@
 }
 
 .dark .animate-shimmer {
-  /* Dark mode: white glint wave over dark base */
-  background: linear-gradient(
-    90deg,
-    transparent 25%,
-    rgba(255, 255, 255, 0.09) 50%,
-    transparent 75%
-  );
-  background-size: 200% 100%;
+  --shimmer-highlight: rgb(255 255 255 / 0.09);
 }
 
 @layer components {
@@ -138,5 +138,53 @@
   .panel-input {
     @apply w-full bg-surface-hover rounded-md px-2.5 py-1.5 text-xs text-foreground
            border border-border-subtle focus:border-border-hover focus:outline-none transition-colors;
+  }
+
+  .style-swatch {
+    @apply bg-surface-active;
+  }
+
+  .style-swatch[data-swatch="#ffffff"] {
+    @apply bg-white;
+  }
+
+  .style-swatch[data-swatch="#e7e5e4"] {
+    @apply bg-stone-200;
+  }
+
+  .style-swatch[data-swatch="#d6d3d1"] {
+    @apply bg-stone-300;
+  }
+
+  .style-swatch[data-swatch="#a8a29e"] {
+    @apply bg-stone-400;
+  }
+
+  .style-swatch[data-swatch="#78716c"] {
+    @apply bg-stone-500;
+  }
+
+  .style-swatch[data-swatch="#1c1917"] {
+    @apply bg-stone-900;
+  }
+
+  .style-swatch[data-swatch="#b45309"] {
+    background-color: #b45309;
+  }
+
+  .style-swatch[data-swatch="#c9a96e"] {
+    @apply bg-accent;
+  }
+
+  .style-swatch[data-swatch="rgba(255,255,255,0.8)"] {
+    @apply bg-white/80;
+  }
+
+  .style-swatch[data-swatch="rgba(255,255,255,0.5)"] {
+    @apply bg-white/50;
+  }
+
+  .style-swatch[data-swatch="rgba(255,255,255,0.35)"] {
+    @apply bg-white/[0.35];
   }
 }

@@ -11,9 +11,9 @@ export function computeStats(deployments: DeploymentCardData[]): StatItemData[] 
 
   return [
     { label: 'Total', value: total },
-    { label: 'Live', value: live, colorClass: live > 0 ? 'text-green-700 dark:text-green-400' : undefined },
+    { label: 'Live', value: live, colorClass: live > 0 ? 'text-success' : undefined },
     { label: 'Drafts', value: drafts },
-    { label: 'Failed', value: failed, colorClass: failed > 0 ? 'text-red-600 dark:text-red-400' : undefined },
+    { label: 'Failed', value: failed, colorClass: failed > 0 ? 'text-error' : undefined },
   ]
 }
 
@@ -21,9 +21,9 @@ export function computeStats(deployments: DeploymentCardData[]): StatItemData[] 
 
 /**
  * Resolve a display image for a deployment card.
- * Priority: Puppeteer screenshot → SEO/OG image from site_data → generated gradient SVG.
+ * Priority: Puppeteer screenshot → SEO/OG image from site_data → card placeholder.
  */
-export function getThumbnailSrc(deployment: DeploymentCardData): string {
+export function getThumbnailSrc(deployment: DeploymentCardData): string | null {
   // Tier 1: Platform screenshot
   if (deployment.screenshot_url) {
     return deployment.screenshot_url
@@ -36,21 +36,7 @@ export function getThumbnailSrc(deployment: DeploymentCardData): string {
     return seoImage
   }
 
-  // Tier 3: Generated gradient placeholder
-  return generateGradientPlaceholder(deployment.id)
-}
-
-function generateGradientPlaceholder(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0
-  }
-  const hue1 = Math.abs(hash) % 360
-  const hue2 = (hue1 + 40) % 360
-
-  return `data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:hsl(${hue1},25%,85%)"/><stop offset="100%" style="stop-color:hsl(${hue2},30%,78%)"/></linearGradient></defs><rect width="400" height="300" fill="url(#g)"/></svg>`
-  )}`
+  return null
 }
 
 // ─── Data Extractors ─────────────────────────────────────────────────────────

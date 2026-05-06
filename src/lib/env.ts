@@ -54,15 +54,15 @@ export const env = {
     )
   },
 
-  /** True when both Claude API key and parse model are configured with real values. */
+  /** True when Claude API key is configured; /api/parse has a model default. */
   get isAiConfigured(): boolean {
     const key = process.env.ANTHROPIC_API_KEY ?? ''
-    return !!(key.startsWith('sk-ant-') && key.length > 50 && process.env.ANTHROPIC_PARSE_MODEL)
+    return key.startsWith('sk-ant-') && key.length > 50
   },
-  /** True when both Gemini API key and parse model are configured with real values. */
+  /** True when Gemini API key is configured; /api/parse has a model default. */
   get isGeminiConfigured(): boolean {
     const key = process.env.GOOGLE_API_KEY ?? ''
-    return !!(key.startsWith('AIza') && key.length > 30 && process.env.GEMINI_PARSE_MODEL)
+    return key.startsWith('AIza') && key.length > 30
   },
   get ANTHROPIC_API_KEY() {
     return requireValue('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY)
@@ -105,26 +105,6 @@ export const env = {
   },
   get QSTASH_TOKEN() {
     return requireValue('QSTASH_TOKEN', process.env.QSTASH_TOKEN)
-  },
-
-  /** True when all voice agent env vars are present (no throw). */
-  get isVoiceAgentConfigured(): boolean {
-    const baseConfigured = !!(
-      process.env.ELEVENLABS_API_KEY &&
-      process.env.ELEVENLABS_AGENT_ID &&
-      process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID &&
-      process.env.ELEVENLABS_WEBHOOK_SECRET &&
-      process.env.QSTASH_TOKEN &&
-      process.env.QSTASH_CURRENT_SIGNING_KEY &&
-      process.env.QSTASH_NEXT_SIGNING_KEY &&
-      process.env.ADMIN_PANEL_URL &&
-      process.env.VOICE_AGENT_ENABLED === 'true'
-    )
-    if (!baseConfigured) return false
-    if (process.env.VOICE_AGENT_DEV_MODE === 'true') {
-      return !!process.env.ELEVENLABS_DEV_TO_NUMBER
-    }
-    return true
   },
 
 }

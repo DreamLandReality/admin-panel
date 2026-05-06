@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getUserRole } from '@/lib/auth/roles'
 import { env } from '@/lib/env'
 
 // Accessing env.SUPABASE_URL and env.SUPABASE_ANON_KEY below acts as eager
@@ -58,12 +59,12 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url)
     }
 
-    // Logged in but not admin
-    if (user && user.app_metadata?.user_role !== 'admin' && !isAuthRoute) {
+    const role = getUserRole(user)
+
+    if (user && !role && !isAuthRoute) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         url.searchParams.set('error', 'unauthorized')
-        // We sign them out so they can try again if they want, but usually handle this client-side too.
         return NextResponse.redirect(url)
     }
 

@@ -1,5 +1,6 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { type NextRequest } from 'next/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiError, apiOk } from '@/lib/api/response'
 
 /**
  * GET /api/projects/check-name?name=...
@@ -14,17 +15,15 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: NextRequest) {
   const name = request.nextUrl.searchParams.get('name')?.trim()
   if (!name) {
-    return NextResponse.json({ exists: false })
+    return apiOk({ exists: false })
   }
 
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canCreateSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   // Check deployments (any status except cancelled)
-  const { data: deployment } = await supabase
+  const { data: deployment, error: deploymentError } = await supabase
     .from('deployments')
     .select('id')
     .eq('deployed_by', user.id)
@@ -33,12 +32,16 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle()
 
+  if (deploymentError) {
+    return apiError(deploymentError.message, 500)
+  }
+
   if (deployment) {
-    return NextResponse.json({ exists: true, type: 'deployment' })
+    return apiOk({ exists: true, type: 'deployment' })
   }
 
   // Check new-site drafts (deployment_id is null means new-site draft)
-  const { data: draft } = await supabase
+  const { data: draft, error: draftError } = await supabase
     .from('drafts')
     .select('id')
     .eq('user_id', user.id)
@@ -47,9 +50,13 @@ export async function GET(request: NextRequest) {
     .limit(1)
     .maybeSingle()
 
-  if (draft) {
-    return NextResponse.json({ exists: true, type: 'draft' })
+  if (draftError) {
+    return apiError(draftError.message, 500)
   }
 
-  return NextResponse.json({ exists: false })
+  if (draft) {
+    return apiOk({ exists: true, type: 'draft' })
+  }
+
+  return apiOk({ exists: false })
 }

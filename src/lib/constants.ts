@@ -28,14 +28,12 @@ export const ROUTES = {
   login: '/login',
   newDeployment: '/deployments/new',
   templates: '/templates',
-  newTemplate: '/templates/new',
   resumeDraft: (id: string) => `/deployments/new?draft=${id}` as const,
   enquiry: '/enquiry',
   deployment: (id: string) => `/deployments/${id}` as const,
   editDeployment: (id: string) => `/deployments/${id}/edit` as const,
   editorNew: '/editor/new',
   editor: (id: string) => `/editor/${id}` as const,
-  template: (slug: string) => `/templates/${slug}` as const,
 } as const
 
 // ─── Template Categories ─────────────────────────────────────────────────────
@@ -52,6 +50,17 @@ export const TEMPLATE_CATEGORIES = [
 
 export const DASHBOARD_CARD_STAGGER_MS = 80
 export const DASHBOARD_MAX_STAGGER_CARDS = 7
+
+// ─── Deployment Timeouts ─────────────────────────────────────────────────────
+
+export const DEPLOY_TIMEOUTS = {
+  /** Heartbeat threshold for the 'deploying' phase before treating it as stale. */
+  DEPLOYING_STALE_MS: 5 * 60 * 1000,
+  /** Heartbeat threshold for the 'building' phase before treating it as stale. */
+  BUILDING_STALE_MS: 10 * 60 * 1000,
+  /** Hard cap for auto-recovering deployments with no progress. */
+  HARD_CANCEL_MS: 15 * 60 * 1000,
+} as const
 
 // ─── Icon Sizes ───────────────────────────────────────────────────────────────
 

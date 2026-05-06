@@ -1,20 +1,24 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
+import { log } from '@/lib/log'
 import { WizardShell } from '@/components/wizard/wizard-shell'
 import { StepTemplatePicker } from '@/components/wizard/step-template-picker'
 import { StepDataInput } from '@/components/wizard/step-data-input'
-import { SyncHeaderContent } from '@/components/shared/sync-header-content'
+import { SyncHeaderStepCounter } from '@/components/shared/sync-header-step-counter'
 import { Skeleton } from '@/components/ui'
 import { useWizardStore } from '@/stores/wizard-store'
 import { ROUTES } from '@/lib/constants'
-import { deploymentService } from '@/services/deployment'
-import { draftService } from '@/services/draft'
-import { getAppConfig } from '@/services/config'
-import { templateService } from '@/services/template'
-import type { SiteData, Template } from '@/types'
+import { useConfigQuery } from '@/hooks/queries/use-config-query'
+import { useTemplatesQuery } from '@/hooks/queries/use-templates-query'
+import { useDraftQuery } from '@/hooks/queries/use-drafts-query'
+import { useActiveDeploymentGateQuery } from '@/hooks/queries/use-deployments-query'
+import {
+  useCancelDeploymentMutation,
+} from '@/hooks/mutations/use-deployment-mutation'
+import { ClockIcon, SpinnerCircleIcon } from '@/components/icons'
 import type { ActiveDeployment } from '@/services/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,10 +29,6 @@ function minutesAgo(isoString: string): number {
   return Math.floor((Date.now() - new Date(isoString).getTime()) / 60_000)
 }
 
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === 'AbortError'
-}
-
 interface GateProps {
   deployment: ActiveDeployment
   isLikelyStuck: boolean
@@ -37,27 +37,17 @@ interface GateProps {
 
 function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: GateProps) {
   const router = useRouter()
-  const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const cancelDeployment = useCancelDeploymentMutation()
   const age = minutesAgo(deployment.updated_at)
 
   async function handleCancel() {
-    setCancelling(true)
     setCancelError(null)
     try {
-      const result = await deploymentService.update(deployment.id, {
-        action: 'cancel',
-        siteData: {} as SiteData,
-      })
-      if (!result.ok) {
-        setCancelError(result.error.message || 'Could not cancel. Try again.')
-        setCancelling(false)
-        return
-      }
+      await cancelDeployment.mutateAsync(deployment.id)
       onCancelSuccess()
-    } catch {
-      setCancelError('Network error. Please try again.')
-      setCancelling(false)
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : 'Network error. Please try again.')
     }
   }
 
@@ -68,21 +58,12 @@ function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: Ga
         {/* ── Icon ── */}
         <div className="flex justify-center">
           {isLikelyStuck ? (
-            <div className="w-12 h-12 rounded-full bg-amber-400/10 border border-amber-400/25 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                strokeWidth="1.6" strokeLinecap="round" className="text-amber-400/80">
-                <path d="M10 6v4l2.5 2.5" />
-                <circle cx="10" cy="10" r="7.5" />
-                <path d="M10 2.5V1M10 19v-1.5M17.5 10H19M1 10h1.5" strokeWidth="1.2" />
-              </svg>
+            <div className="w-12 h-12 rounded-full bg-warning/10 border border-warning/25 flex items-center justify-center">
+              <ClockIcon width={20} height={20} strokeWidth={1.6} className="text-warning/80" />
             </div>
           ) : (
-            <div className="w-12 h-12 rounded-full bg-amber-400/10 border border-amber-400/25 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                strokeWidth="1.5" className="animate-spin text-amber-400/70"
-                style={{ animationDuration: '1s' }}>
-                <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-              </svg>
+            <div className="w-12 h-12 rounded-full bg-warning/10 border border-warning/25 flex items-center justify-center">
+              <SpinnerCircleIcon width={20} height={20} strokeWidth={1.5} className="animate-spin text-warning/70" />
             </div>
           )}
         </div>
@@ -101,12 +82,12 @@ function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: Ga
         <div className={cn(
           'rounded-xl border px-4 py-3.5 text-sm leading-relaxed',
           isLikelyStuck
-            ? 'bg-amber-400/5 border-amber-400/15 text-amber-400/70'
+            ? 'bg-warning/5 border-warning/15 text-warning/70'
             : 'bg-surface border-border text-foreground-muted',
         )}>
           {isLikelyStuck ? (
             <>
-              <span className="font-medium text-amber-400/90">Started {age} minute{age !== 1 ? 's' : ''} ago</span> and hasn&apos;t
+              <span className="font-medium text-warning/90">Started {age} minute{age !== 1 ? 's' : ''} ago</span> and hasn&apos;t
               made recent progress. It may have failed silently without updating its status.
             </>
           ) : (
@@ -127,10 +108,10 @@ function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: Ga
             <>
               <button
                 onClick={handleCancel}
-                disabled={cancelling}
-                className="flex-1 h-9 rounded-lg bg-amber-400/15 border border-amber-400/25 text-amber-400/90 text-sm font-medium hover:bg-amber-400/20 active:scale-[0.97] active:opacity-80 transition-all duration-100 disabled:opacity-50"
+                disabled={cancelDeployment.isPending}
+                className="flex-1 h-9 rounded-lg bg-warning/15 border border-warning/25 text-warning/90 text-sm font-medium hover:bg-warning/20 active:scale-[0.97] active:opacity-80 transition-all duration-100 disabled:opacity-50"
               >
-                {cancelling ? 'Cancelling…' : 'Force Cancel & Start New'}
+                {cancelDeployment.isPending ? 'Cancelling…' : 'Force Cancel & Start New'}
               </button>
               <button
                 onClick={() => router.push(`/deployments/${deployment.id}/progress`)}
@@ -149,10 +130,10 @@ function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: Ga
               </button>
               <button
                 onClick={handleCancel}
-                disabled={cancelling}
+                disabled={cancelDeployment.isPending}
                 className="flex-1 h-9 rounded-lg border border-border text-foreground-muted text-sm hover:text-foreground hover:bg-surface-hover active:scale-[0.97] active:opacity-70 transition-all duration-100 disabled:opacity-40"
               >
-                {cancelling ? 'Cancelling…' : 'Cancel Deployment'}
+                {cancelDeployment.isPending ? 'Cancelling…' : 'Cancel Deployment'}
               </button>
             </>
           )}
@@ -170,121 +151,121 @@ function NewDeploymentPageContent() {
   const router = useRouter()
   const draftId = searchParams.get('draft')
 
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isAiConfigured, setIsAiConfigured] = useState(false)
-  const [isGeminiConfigured, setIsGeminiConfigured] = useState(false)
-  const [activeDeployment, setActiveDeployment] = useState<ActiveDeployment | null>(null)
-  const [isLikelyStuck, setIsLikelyStuck] = useState(false)
   const currentStep = useWizardStore((s) => s.currentStep)
   const reset = useWizardStore((s) => s.reset)
   const loadFromDraft = useWizardStore((s) => s.loadFromDraft)
 
-  // Keep a stable ref to init so we can call it again after cancellation
-  const initRef = useRef<((signal: AbortSignal) => Promise<void>) | null>(null)
+  const appConfigQuery = useConfigQuery()
+  const templatesQuery = useTemplatesQuery()
+  const draftQuery = useDraftQuery(draftId)
+  const activeGateQuery = useActiveDeploymentGateQuery()
+  const autoCancelDeployment = useCancelDeploymentMutation()
+  const resetForNoDraftRef = useRef(false)
+  const loadedDraftRef = useRef<string | null>(null)
+  const autoCancelAttemptRef = useRef<string | null>(null)
 
-  const init = useCallback(async (signal: AbortSignal) => {
-    setLoading(true)
+  const activeDeployment = activeGateQuery.data?.deployment ?? null
+  const isLikelyStuck = activeGateQuery.data?.isLikelyStuck ?? false
+  const autoCancelSucceeded = !!activeDeployment && isLikelyStuck && autoCancelDeployment.isSuccess
+  const showActiveDeploymentGate = !!activeDeployment && isLikelyStuck && autoCancelDeployment.isError
+  const isRedirectingActiveDeployment = !!activeDeployment && !isLikelyStuck
+  const isAutoCancelling = !!activeDeployment && isLikelyStuck && !autoCancelDeployment.isError && !autoCancelDeployment.isSuccess
+  const canLoadWizard = activeGateQuery.isError || !activeDeployment || autoCancelSucceeded
+  const templates = useMemo(
+    () => canLoadWizard ? templatesQuery.data ?? [] : [],
+    [canLoadWizard, templatesQuery.data]
+  )
+  const isAiConfigured = appConfigQuery.data?.isAiConfigured ?? false
+  const isGeminiConfigured = appConfigQuery.data?.isGeminiConfigured ?? false
+  const isWizardDataLoading =
+    canLoadWizard &&
+    (templatesQuery.isLoading || appConfigQuery.isLoading || (!!draftId && draftQuery.isLoading))
+  const loading =
+    activeGateQuery.isLoading ||
+    isRedirectingActiveDeployment ||
+    isAutoCancelling ||
+    isWizardDataLoading
 
-    // ── Check for active deployment before loading the wizard ──────────────
-    try {
-      const activeResult = await deploymentService.getActive({ signal })
-      if (activeResult.ok && activeResult.data.deployment) {
-        const { deployment, isLikelyStuck: stuck } = activeResult.data
-        if (stuck) {
-          // Zombie — auto-cancel it silently and continue loading the wizard
-          const cancelResult = await deploymentService.update(deployment.id, {
-            action: 'cancel',
-            siteData: {} as SiteData,
-          }, { signal })
-          if (!cancelResult.ok) {
-            setActiveDeployment(deployment)
-            setIsLikelyStuck(stuck)
-            setLoading(false)
-            return
-          }
-        } else {
-          // Genuine in-progress deployment — redirect straight to its progress page
-          router.replace(`/deployments/${deployment.id}/progress`)
-          return
-        }
-      }
-    } catch (err: unknown) {
-      if (isAbortError(err)) return
-      // Network failure: fall through and let the 429 guard in /deploy handle it
-    }
-
-    setActiveDeployment(null)
-
-    // ── Load templates and feature flags in parallel ───────────────────────
-    const [templatesResult, configResult] = await Promise.all([
-      templateService.list({ signal }),
-      getAppConfig({ signal }),
-    ])
-    const allTemplates: Template[] = templatesResult.ok ? templatesResult.data : []
-    setTemplates(allTemplates)
-
-    if (configResult.ok) {
-      setIsAiConfigured(configResult.data.isAiConfigured)
-      setIsGeminiConfigured(configResult.data.isGeminiConfigured)
-    }
-
-    if (draftId) {
-      try {
-        const draftResult = await draftService.get(draftId, { signal })
-        if (draftResult.ok) {
-          const draft = draftResult.data
-          const template = allTemplates.find(
-            (t) => t.id === draft.template_id || t.slug === draft.template_slug
-          )
-          if (template) {
-            loadFromDraft(draft, template)
-          } else {
-            console.error('[Resume] Template not found for draft')
-            reset()
-          }
-        } else {
-          console.error('[Resume] Draft not found:', draftResult.error.message)
-          reset()
-        }
-      } catch (err: unknown) {
-        if (!isAbortError(err)) {
-          console.error('[Resume] Failed:', err)
-          reset()
-        }
-      }
-    } else {
-      reset()
-    }
-
-    setLoading(false)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    resetForNoDraftRef.current = false
+    loadedDraftRef.current = null
   }, [draftId])
 
   useEffect(() => {
-    const controller = new AbortController()
-    initRef.current = init
-    init(controller.signal).catch((err) => {
-      if (err.name !== 'AbortError') console.error(err)
-    })
-    return () => controller.abort()
-  }, [init])
+    if (activeDeployment && !isLikelyStuck) {
+      router.replace(`/deployments/${activeDeployment.id}/progress`)
+    }
+  }, [activeDeployment, isLikelyStuck, router])
+
+  useEffect(() => {
+    if (
+      !activeDeployment ||
+      !isLikelyStuck ||
+      autoCancelDeployment.isPending ||
+      autoCancelDeployment.isSuccess ||
+      autoCancelDeployment.isError ||
+      autoCancelAttemptRef.current === activeDeployment.id
+    ) {
+      return
+    }
+    autoCancelAttemptRef.current = activeDeployment.id
+    autoCancelDeployment.mutate(activeDeployment.id)
+  }, [activeDeployment, autoCancelDeployment, isLikelyStuck])
+
+  useEffect(() => {
+    if (!canLoadWizard || templatesQuery.isLoading || appConfigQuery.isLoading) return
+    if (!draftId) {
+      if (!resetForNoDraftRef.current) {
+        reset()
+        resetForNoDraftRef.current = true
+      }
+      return
+    }
+    if (draftQuery.isLoading || loadedDraftRef.current === draftId) return
+    if (draftQuery.isError || !draftQuery.data) {
+      log.error('[Resume] Draft not found:', draftQuery.error?.message ?? 'Unknown error')
+      reset()
+      loadedDraftRef.current = draftId
+      return
+    }
+    const template = templates.find(
+      (t) => t.id === draftQuery.data.template_id || t.slug === draftQuery.data.template_slug
+    )
+    if (template) {
+      loadFromDraft(draftQuery.data, template)
+    } else {
+      log.error('[Resume] Template not found for draft')
+      reset()
+    }
+    loadedDraftRef.current = draftId
+  }, [
+    appConfigQuery.isLoading,
+    canLoadWizard,
+    draftId,
+    draftQuery.data,
+    draftQuery.error,
+    draftQuery.isError,
+    draftQuery.isLoading,
+    loadFromDraft,
+    reset,
+    templates,
+    templatesQuery.isLoading,
+  ])
 
   function handleCancelSuccess() {
-    const controller = new AbortController()
-    init(controller.signal).catch(console.error)
+    void activeGateQuery.refetch()
   }
 
   // ── Step 3: navigate to isolated editor route ─────────────────────────
   useEffect(() => {
-    if (!loading && !activeDeployment && currentStep === 3) {
+    if (!loading && !showActiveDeploymentGate && currentStep === 3) {
       if (ROUTES.editorNew) {
         router.push(ROUTES.editorNew)
       }
     }
-  }, [loading, activeDeployment, currentStep, router])
+  }, [loading, showActiveDeploymentGate, currentStep, router])
 
-  if (!loading && !activeDeployment && currentStep === 3) return null
+  if (!loading && !showActiveDeploymentGate && currentStep === 3) return null
 
   // ── Loading skeleton ───────────────────────────────────────────────────
   if (loading) {
@@ -305,7 +286,7 @@ function NewDeploymentPageContent() {
   }
 
   // ── Active deployment gate ─────────────────────────────────────────────
-  if (activeDeployment) {
+  if (showActiveDeploymentGate && activeDeployment) {
     return (
       <ActiveDeploymentGate
         deployment={activeDeployment}
@@ -318,16 +299,7 @@ function NewDeploymentPageContent() {
   // ── Steps 1, 2 & 4: standard wizard layout ─────────────────────────────
   return (
     <>
-      <SyncHeaderContent>
-        <div className="text-center min-w-[52px]">
-          <p className="font-serif text-3xl font-light tabular-nums leading-none text-foreground">
-            {currentStep}<span className="text-foreground-muted">/3</span>
-          </p>
-          <p className="mt-1.5 text-micro font-bold uppercase tracking-label text-foreground-muted">
-            Step
-          </p>
-        </div>
-      </SyncHeaderContent>
+      <SyncHeaderStepCounter currentStep={currentStep} totalSteps={3} label="Step" />
 
       <WizardShell currentStep={currentStep}>
         {currentStep === 1 && (

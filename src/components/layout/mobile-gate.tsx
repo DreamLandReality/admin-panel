@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Monitor } from 'lucide-react'
+import { MonitorIcon } from '@/components/icons'
 
 export function MobileGate({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
@@ -20,7 +20,7 @@ export function MobileGate({ children }: { children: React.ReactNode }) {
   if (isMobile) {
     return (
       <div className="fixed inset-0 z-[200] bg-background flex flex-col items-center justify-center p-8 text-center">
-        <Monitor className="w-10 h-10 text-accent mb-6" />
+        <MonitorIcon className="w-10 h-10 text-accent mb-6" />
         <h1 className="font-serif text-xl text-foreground">
           Best experienced on a larger screen
         </h1>

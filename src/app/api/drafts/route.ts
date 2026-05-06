@@ -1,27 +1,27 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { type NextRequest } from 'next/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiData, apiError } from '@/lib/api/response'
+import { parseJsonRecordBody } from '@/lib/api/request'
 
 /**
  * GET /api/drafts — List all drafts for the authenticated user
  */
 export async function GET() {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   const { data, error } = await supabase
     .from('drafts')
-    .select('id, project_name, template_slug, template_id, current_step, updated_at, deployment_id')
+    .select('id, project_name, template_slug, template_id, current_step, updated_at, deployment_id, screenshot_url, deployments(project_name, screenshot_url, status), templates(preview_url)')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiError(error.message, 500)
   }
 
-  return NextResponse.json({ data })
+  return apiData(data)
 }
 
 /**
@@ -37,18 +37,13 @@ export async function GET() {
  *    (resolved via deployment join for display). deployment_id is required.
  */
 export async function POST(request: NextRequest) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
-  let body: any
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-  }
+  const bodyResult = await parseJsonRecordBody(request)
+  if (!bodyResult.ok) return bodyResult.response
+  const body = bodyResult.data
   const {
     deployment_id,
     project_name,
@@ -64,36 +59,40 @@ export async function POST(request: NextRequest) {
     screenshot_url,
   } = body
 
-  if (!template_slug) {
-    return NextResponse.json({ error: 'template_slug is required' }, { status: 400 })
+  if (typeof template_slug !== 'string' || !template_slug) {
+    return apiError('template_slug is required', 400)
   }
 
   // ── Edit-site draft path ──────────────────────────────────────────────────
-  if (deployment_id) {
+  if (typeof deployment_id === 'string' && deployment_id) {
     const record = {
       user_id: user.id,
       deployment_id,
       project_name: null as null,   // resolved via deployment join — not stored
       template_slug,
-      template_id: template_id ?? null,
-      current_step: current_step ?? 3,
-      raw_text: raw_text ?? '',
+      template_id: typeof template_id === 'string' ? template_id : null,
+      current_step: typeof current_step === 'number' ? current_step : 3,
+      raw_text: typeof raw_text === 'string' ? raw_text : '',
       section_data: section_data ?? {},
       sections_registry: sections_registry ?? {},
       collection_data: collection_data ?? {},
-      site_slug: site_slug ?? null,
-      last_active_page: last_active_page ?? null,
-      screenshot_url: screenshot_url ?? null,
+      site_slug: typeof site_slug === 'string' ? site_slug : null,
+      last_active_page: typeof last_active_page === 'string' ? last_active_page : null,
+      screenshot_url: typeof screenshot_url === 'string' ? screenshot_url : null,
       updated_at: new Date().toISOString(),
     }
 
     // Check whether an edit draft already exists for this deployment
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('drafts')
       .select('id')
       .eq('user_id', user.id)
       .eq('deployment_id', deployment_id)
       .maybeSingle()
+
+    if (existingError) {
+      return apiError(existingError.message, 500)
+    }
 
     if (existing) {
       const { data, error } = await supabase
@@ -104,9 +103,9 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return apiError(error.message, 500)
       }
-      return NextResponse.json({ data })
+      return apiData(data)
     } else {
       const { data, error } = await supabase
         .from('drafts')
@@ -115,18 +114,15 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return apiError(error.message, 500)
       }
-      return NextResponse.json({ data })
+      return apiData(data)
     }
   }
 
   // ── New-site draft path ───────────────────────────────────────────────────
-  if (!project_name) {
-    return NextResponse.json(
-      { error: 'project_name is required for new-site drafts' },
-      { status: 400 }
-    )
+  if (typeof project_name !== 'string' || !project_name) {
+    return apiError('project_name is required for new-site drafts', 400)
   }
 
   const { data, error } = await supabase
@@ -136,15 +132,15 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         project_name,
         template_slug,
-        template_id: template_id ?? null,
-        current_step: current_step ?? 3,
-        raw_text: raw_text ?? '',
+        template_id: typeof template_id === 'string' ? template_id : null,
+        current_step: typeof current_step === 'number' ? current_step : 3,
+        raw_text: typeof raw_text === 'string' ? raw_text : '',
         section_data: section_data ?? {},
         sections_registry: sections_registry ?? {},
         collection_data: collection_data ?? {},
-        site_slug: site_slug ?? null,
-        last_active_page: last_active_page ?? null,
-        screenshot_url: screenshot_url ?? null,
+        site_slug: typeof site_slug === 'string' ? site_slug : null,
+        last_active_page: typeof last_active_page === 'string' ? last_active_page : null,
+        screenshot_url: typeof screenshot_url === 'string' ? screenshot_url : null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,project_name' }
@@ -153,8 +149,8 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiError(error.message, 500)
   }
 
-  return NextResponse.json({ data })
+  return apiData(data)
 }

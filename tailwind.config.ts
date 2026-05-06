@@ -76,15 +76,21 @@ const config: Config = {
       transitionTimingFunction: {
         sidebar: 'cubic-bezier(0.2,0.8,0.2,1)',
         spring: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        'out-expo': 'cubic-bezier(0.19, 1, 0.22, 1)',
       },
       boxShadow: {
         soft: 'var(--shadow-soft)',
         float: 'var(--shadow-float)',
         glow: 'var(--shadow-glow)',
-        modal: '0 32px 64px -16px rgba(0,0,0,0.4)',
+        modal: 'var(--shadow-modal)',
         'nav-indicator': 'var(--shadow-nav-indicator)',
         'ping-ring': 'var(--shadow-ping-ring)',
         'ping-dot': 'var(--shadow-ping-dot)',
+        'lead-dot': 'var(--shadow-lead-dot)',
+      },
+      backgroundImage: {
+        'login-dot-pattern': 'var(--background-login-dot-pattern)',
+        'deploy-page': 'var(--background-deploy-page)',
       },
       animation: {
         'fade-in': 'fadeIn 0.6s ease-out forwards',

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils/cn'
 import { useWizardStore } from '@/stores/wizard-store'
 import { useUiStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
+import { XIcon } from '@/components/icons'
 import type { Collection } from '@/types'
 
 // ─── CollectionsPanel (navigation-only for Data mode) ───────────────────────
@@ -127,12 +128,10 @@ export function CollectionsPanel() {
                       if (isSelected) setSelectedCollectionItem(null)
                       removeCollectionItem(activeCollectionId!, item.id)
                     }}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all flex-shrink-0"
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-error transition-all flex-shrink-0"
                     title="Remove item"
                   >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                      <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
+                    <XIcon width={10} height={10} strokeWidth={1.5} />
                   </button>
                 </div>
               </div>

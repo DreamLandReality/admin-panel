@@ -1,14 +1,11 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
-import { cn } from '@/lib/utils/cn'
 import type { DeploymentCardData } from '@/types'
 import { ROUTES } from '@/lib/constants'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { DeleteSiteAction } from '@/components/shared/delete-site-action'
 import { AnimatedCard } from '@/components/ui/animated-card'
+import { ExternalLinkIcon } from '@/components/icons'
+import { DeploymentThumbnail } from './deployment-thumbnail'
 import {
   getThumbnailSrc,
   getImageFilterClass,
@@ -18,11 +15,14 @@ import {
 export function DeploymentCard({
   deployment,
   index,
+  canEdit = true,
+  canDelete = true,
 }: {
   deployment: DeploymentCardData
   index: number
+  canEdit?: boolean
+  canDelete?: boolean
 }) {
-  const [imgLoaded, setImgLoaded] = useState(false)
   const thumbnailSrc = getThumbnailSrc(deployment)
   const relativeTime = formatRelativeTime(deployment.updated_at)
   const imageFilter = getImageFilterClass(deployment.status)
@@ -31,45 +31,23 @@ export function DeploymentCard({
 
   return (
     <AnimatedCard index={index}>
-      <div className="group relative rounded-xl bg-card overflow-hidden cursor-pointer">
+      <div className={canEdit ? 'group relative rounded-xl bg-card overflow-hidden cursor-pointer' : 'group relative rounded-xl bg-card overflow-hidden'}>
         {/* Full-card link */}
-        <Link
-          href={ROUTES.editor(deployment.id)}
-          className="absolute inset-0 z-10"
-          aria-label={`Edit ${deployment.project_name}`}
-        />
+        {canEdit && (
+          <Link
+            href={ROUTES.editor(deployment.id)}
+            className="absolute inset-0 z-10"
+            aria-label={`Edit ${deployment.project_name}`}
+          />
+        )}
 
         {/* Thumbnail */}
         <div className="aspect-card bg-muted relative overflow-hidden">
-          {!imgLoaded && (
-            <div className="absolute inset-0 z-10 animate-shimmer" />
-          )}
-          {thumbnailSrc.startsWith('data:') ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={thumbnailSrc}
-              alt={`${deployment.project_name} preview`}
-              onLoad={() => setImgLoaded(true)}
-              className={cn(
-                'w-full h-full object-cover transition-all duration-500 group-hover:scale-105',
-                imageFilter,
-                imgLoaded ? 'opacity-100' : 'opacity-0',
-              )}
-            />
-          ) : (
-            <Image
-              src={thumbnailSrc}
-              alt={`${deployment.project_name} preview`}
-              fill
-              onLoad={() => setImgLoaded(true)}
-              className={cn(
-                'object-cover transition-all duration-500 group-hover:scale-105',
-                imageFilter,
-                imgLoaded ? 'opacity-100' : 'opacity-0',
-              )}
-              sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
-            />
-          )}
+          <DeploymentThumbnail
+            src={thumbnailSrc}
+            alt={`${deployment.project_name} preview`}
+            imageClassName={`object-cover transition-all duration-500 group-hover:scale-105 ${imageFilter}`}
+          />
 
           {/* Status badge */}
           <div className="absolute left-2.5 top-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
@@ -86,26 +64,24 @@ export function DeploymentCard({
               aria-label="View live site"
               className="absolute top-2.5 right-2.5 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 hover:text-white backdrop-blur-sm cursor-pointer"
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 1h4v4M11 1L5.5 6.5M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
-              </svg>
+              <ExternalLinkIcon width={12} height={12} strokeWidth={1.5} />
             </a>
           )}
 
           {/* Delete button — only for live deployments */}
-          {deployment.status === 'live' && (
+          {canDelete && deployment.status === 'live' && (
             <DeleteSiteAction
               deploymentId={deployment.id}
               projectName={deployment.project_name}
-              className="absolute top-2.5 right-10 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 hover:text-red-400 backdrop-blur-sm cursor-pointer"
+              className="absolute top-2.5 right-10 z-20 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-error opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 hover:text-error/80 backdrop-blur-sm cursor-pointer"
             />
           )}
 
           {/* Unpublished changes strip — bottom of image */}
-          {hasUnpublished && (
-            <div className="absolute bottom-0 inset-x-0 z-10 flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 backdrop-blur-sm border-t border-amber-500/20 pointer-events-none">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-              <span className="text-label font-medium uppercase tracking-label text-amber-400">Has unpublished changes</span>
+          {canEdit && hasUnpublished && (
+            <div className="absolute bottom-0 inset-x-0 z-10 flex items-center gap-1.5 px-2.5 py-1.5 bg-warning/10 backdrop-blur-sm border-t border-warning/20 pointer-events-none">
+              <span className="h-1.5 w-1.5 rounded-full bg-warning shrink-0" />
+              <span className="text-label font-medium uppercase tracking-label text-warning">Has unpublished changes</span>
             </div>
           )}
         </div>

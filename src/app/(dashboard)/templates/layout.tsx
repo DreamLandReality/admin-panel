@@ -1,0 +1,7 @@
+import type { ReactNode } from 'react'
+import { requirePageCapability } from '@/lib/auth/page-guards'
+
+export default async function TemplatesLayout({ children }: { children: ReactNode }) {
+  await requirePageCapability('canManageTemplates')
+  return children
+}

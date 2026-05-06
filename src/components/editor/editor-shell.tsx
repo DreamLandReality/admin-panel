@@ -8,6 +8,7 @@ import { useUiStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
 import { extractDraftThumbnail } from '@/lib/utils/draft-thumbnail'
+import { log } from '@/lib/log'
 import { Button } from '@/components/ui/button'
 import { Spinner, Heading } from '@/components/primitives'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
@@ -20,6 +21,7 @@ import { RightPanel } from './right-panel'
 import { LeftPanel } from './left-panel'
 import { CollectionEditorPanel } from './collection-editor-panel'
 import { ViewportSwitcher } from './viewport-switcher'
+import { ChevronLeftIcon } from '@/components/icons'
 
 export function EditorShell() {
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -119,7 +121,7 @@ export function EditorShell() {
     const store = useEditorStore.getState()
     const { urlMap, failed } = await uploadPendingImages(store.pendingImages)
     if (failed.length > 0) {
-      console.warn(`[editor] ${failed.length} image(s) failed to upload — draft may be missing images.`)
+      log.warn(`[editor] ${failed.length} image(s) failed to upload — draft may be missing images.`)
     }
     const finalSectionData = replaceBlobUrls(store.sectionData, urlMap)
     const finalCollectionData = replaceBlobUrls(store.collectionData, urlMap)
@@ -170,7 +172,7 @@ export function EditorShell() {
         toast.error(result.error.message)
       }
     } catch (err: unknown) {
-      console.error('[SaveDraft] Failed:', err)
+      log.error('[SaveDraft] Failed:', err)
       toast.error(err instanceof Error ? err.message : 'Draft save failed. Please try again.')
     } finally {
       setSaving(false)
@@ -202,7 +204,7 @@ export function EditorShell() {
         toast.error(result.error.message)
       }
     } catch (err: unknown) {
-      console.error('[SaveChanges] Failed:', err)
+      log.error('[SaveChanges] Failed:', err)
       toast.error(err instanceof Error ? err.message : 'Failed to save changes. Please try again.')
     } finally {
       setSaving(false)
@@ -244,14 +246,12 @@ export function EditorShell() {
         {/* Left — Back + context label */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <Button variant="ghost" size="sm" onClick={handleBack} className="gap-2 hover:bg-white/5">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M9 11L5 7l4-4" />
-            </svg>
+            <ChevronLeftIcon width={14} height={14} strokeWidth={1.5} />
             Back
           </Button>
           <div className="w-px h-5 bg-border" />
           <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/60" />
+            <div className="w-1.5 h-1.5 rounded-full bg-success/60" />
             <span className="text-xs font-medium text-muted-foreground truncate max-w-40">
               {isEditMode ? 'Live Site' : (selectedTemplate?.name ?? '')}
             </span>
@@ -267,11 +267,11 @@ export function EditorShell() {
           </Heading>
           {!isViewOnly && (
             saving
-              ? <span className="text-label uppercase tracking-label text-amber-400/90 border border-amber-400/30 bg-amber-400/10 px-2 py-1 rounded-md flex-shrink-0 flex items-center gap-1.5 shadow-sm">
+              ? <span className="text-label uppercase tracking-label text-warning/90 border border-warning/30 bg-warning/10 px-2 py-1 rounded-md flex-shrink-0 flex items-center gap-1.5 shadow-sm">
                   <Spinner size="xs" variant="accent" /> Saving
                 </span>
               : (draftId || isEditMode) && !isDirty
-                ? <span className="text-label uppercase tracking-label text-emerald-400/90 border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 rounded-md flex-shrink-0 shadow-sm">Saved</span>
+                ? <span className="text-label uppercase tracking-label text-success/90 border border-success/30 bg-success/10 px-2 py-1 rounded-md flex-shrink-0 shadow-sm">Saved</span>
                 : isDirty
                   ? <span className="text-label uppercase tracking-label text-muted-foreground/60 border border-border bg-white/5 px-2 py-1 rounded-md flex-shrink-0">Unsaved</span>
                   : null
@@ -298,7 +298,7 @@ export function EditorShell() {
                   deploymentId={deploymentId}
                   projectName={projectName}
                   description={`"${projectName}" will be taken offline and removed from your dashboard. This cannot be undone.`}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:text-red-400 hover:bg-destructive/10 border border-transparent hover:border-destructive/20 transition-colors"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-error hover:text-error/80 hover:bg-error/10 border border-transparent hover:border-error/20 transition-colors"
                   onDeleted={() => {
                     useWizardStore.getState().reset()
                     router.push('/')

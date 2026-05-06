@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { MousePointerClick } from 'lucide-react'
+import { MousePointerClickIcon } from '@/components/icons'
 import { useWizardStore } from '@/stores/wizard-store'
 import { useUiStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
@@ -26,7 +26,7 @@ export const CollectionEditorPanel = React.memo(function CollectionEditorPanel()
     return (
       <EmptyState
         size="sm"
-        icon={<MousePointerClick className="h-4 w-4" />}
+        icon={<MousePointerClickIcon className="h-4 w-4" />}
         heading="Select an item"
         description="Choose an item from the list to edit its fields"
       />

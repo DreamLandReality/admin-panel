@@ -2,9 +2,9 @@ import { cn } from '@/lib/utils/cn'
 
 const variantMap = {
   warning: {
-    container: 'border-amber-400/20 bg-amber-400/5',
-    title: 'text-amber-400',
-    body: 'text-amber-300/80',
+    container: 'border-warning/20 bg-warning/5',
+    title: 'text-warning',
+    body: 'text-warning/80',
   },
   error: {
     container: 'border-error/20 bg-error/10',

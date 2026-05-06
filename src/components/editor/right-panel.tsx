@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef } from 'react'
-import { MousePointerClick } from 'lucide-react'
+import { MousePointerClickIcon } from '@/components/icons'
 import { useUiStore } from '@/stores/ui-store'
 import { SharedLabelsView } from './views/shared-labels-view'
 import { SectionFieldsView } from './views/section-fields-view'
@@ -33,7 +33,7 @@ export const RightPanel = React.memo(function RightPanel({ iframeRef }: { iframe
       {!sectionId && (
         <EmptyState
           size="sm"
-          icon={<MousePointerClick className="h-4 w-4" />}
+          icon={<MousePointerClickIcon className="h-4 w-4" />}
           heading="Nothing selected"
           description="Click a section to start editing"
         />

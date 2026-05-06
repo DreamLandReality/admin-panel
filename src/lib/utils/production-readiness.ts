@@ -1,4 +1,5 @@
 import type { SiteData, TemplateManifest } from '@/types'
+import { isRecord } from '@/lib/api/contracts'
 
 export type ProductionReadinessReason =
   | 'shared_default_asset'
@@ -26,10 +27,6 @@ const IMPORTANT_FIELD_PATTERN =
 
 const IMPORTANT_SECTION_PATTERN = /hero|media|gallery|tour|brochure|contact|price|seo|property|properties/i
 const ASSET_EXTENSION_PATTERN = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov|pdf)(\?|#|$)/i
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
 
 function humanizeToken(value: string): string {
   return value

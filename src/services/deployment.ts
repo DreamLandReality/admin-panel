@@ -1,4 +1,10 @@
 import type { Deployment } from '@/types'
+import {
+  isArchivedStatusPayload,
+  isDeploymentIdPayload,
+  isRecord,
+  isStringIdPayload,
+} from '@/lib/api/contracts'
 import type {
   ActiveDeploymentGateResult,
   ActiveDeployment,
@@ -6,9 +12,9 @@ import type {
   DeploymentWithTemplate,
   Result,
   RestoreDeploymentResult,
-  UpdateDeploymentResult,
 } from './types'
-import { errorResult, getResponseError, isRecord, readJson, toServiceError } from './http'
+import { apiJsonRequest } from './api-client'
+import { errorResult } from './http'
 
 function isActiveDeployment(value: unknown): value is ActiveDeployment {
   return (
@@ -40,37 +46,31 @@ function isDeploymentWithTemplate(value: unknown): value is DeploymentWithTempla
   )
 }
 
-function isUpdateDeploymentResult(value: unknown): value is UpdateDeploymentResult {
-  return isRecord(value) && typeof value.id === 'string'
-}
-
 async function getActive(options?: { signal?: AbortSignal }): Promise<Result<ActiveDeploymentGateResult>> {
-  try {
-    const response = await fetch('/api/deployments/active', { signal: options?.signal })
-    const payload = await readJson(response)
-    if (!response.ok) {
-      return { ok: false, error: getResponseError(response, payload, 'Failed to load active deployments.') }
-    }
-    if (!isRecord(payload)) {
-      return errorResult<ActiveDeploymentGateResult>('Active deployments response was invalid.')
-    }
+  const result = await apiJsonRequest('/api/deployments/active', {
+    signal: options?.signal,
+    fallback: 'Failed to load active deployments.',
+  })
+  if (!result.ok) return result
 
-    if (payload.deployment === null) {
-      return { ok: true, data: { deployment: null, isLikelyStuck: false } }
-    }
-    if (!isActiveDeployment(payload.deployment)) {
-      return errorResult<ActiveDeploymentGateResult>('Active deployments response was invalid.')
-    }
+  const payload = result.data
+  if (!isRecord(payload)) {
+    return errorResult<ActiveDeploymentGateResult>('Active deployments response was invalid.')
+  }
 
-    return {
-      ok: true,
-      data: {
-        deployment: payload.deployment,
-        isLikelyStuck: typeof payload.isLikelyStuck === 'boolean' ? payload.isLikelyStuck : false,
-      },
-    }
-  } catch (error) {
-    return { ok: false, error: toServiceError(error, 'Failed to load active deployments.') }
+  if (payload.deployment === null) {
+    return { ok: true, data: { deployment: null, isLikelyStuck: false } }
+  }
+  if (!isActiveDeployment(payload.deployment)) {
+    return errorResult<ActiveDeploymentGateResult>('Active deployments response was invalid.')
+  }
+
+  return {
+    ok: true,
+    data: {
+      deployment: payload.deployment,
+      isLikelyStuck: typeof payload.isLikelyStuck === 'boolean' ? payload.isLikelyStuck : false,
+    },
   }
 }
 
@@ -84,82 +84,67 @@ export const deploymentService: DeploymentService = {
   },
 
   async get(id, options) {
-    try {
-      const response = await fetch(`/api/deployments/${id}`, { signal: options?.signal })
-      const payload = await readJson(response)
-      if (!response.ok) {
-        return { ok: false, error: getResponseError(response, payload, 'Failed to load deployment.') }
-      }
-      if (!isRecord(payload) || !isDeploymentWithTemplate(payload.data)) {
-        return errorResult('Deployment response was invalid.')
-      }
+    const result = await apiJsonRequest(`/api/deployments/${id}`, {
+      signal: options?.signal,
+      fallback: 'Failed to load deployment.',
+    })
+    if (!result.ok) return result
 
-      return { ok: true, data: payload.data }
-    } catch (error) {
-      return { ok: false, error: toServiceError(error, 'Failed to load deployment.') }
+    const payload = result.data
+    if (!isRecord(payload) || !isDeploymentWithTemplate(payload.data)) {
+      return errorResult('Deployment response was invalid.')
     }
+
+    return { ok: true, data: payload.data }
   },
 
   async update(id, input, options) {
-    try {
-      const response = await fetch(`/api/deployments/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        signal: options?.signal,
-        body: JSON.stringify({ site_data: input.siteData, action: input.action }),
-      })
-      const payload = await readJson(response)
-      if (!response.ok) {
-        return { ok: false, error: getResponseError(response, payload, 'Failed to save changes.') }
-      }
-      if (!isRecord(payload) || !isUpdateDeploymentResult(payload.data)) {
-        return errorResult('Deployment update response was invalid.')
-      }
+    const result = await apiJsonRequest(`/api/deployments/${id}`, {
+      method: 'PATCH',
+      signal: options?.signal,
+      fallback: 'Failed to save changes.',
+      json: { site_data: input.siteData, action: input.action },
+    })
+    if (!result.ok) return result
 
-      return { ok: true, data: payload.data }
-    } catch (error) {
-      return { ok: false, error: toServiceError(error, 'Failed to save changes.') }
+    const payload = result.data
+    if (!isRecord(payload) || !isStringIdPayload(payload.data)) {
+      return errorResult('Deployment update response was invalid.')
     }
+
+    return { ok: true, data: payload.data }
   },
 
   async delete(id, options) {
-    try {
-      const response = await fetch(`/api/deployments/${id}`, {
-        method: 'DELETE',
-        signal: options?.signal,
-      })
-      const payload = await readJson(response)
-      if (!response.ok) {
-        return { ok: false, error: getResponseError(response, payload, 'Failed to delete site.') }
-      }
-      if (!isRecord(payload) || payload.status !== 'archived') {
-        return errorResult('Deployment delete response was invalid.')
-      }
+    const result = await apiJsonRequest(`/api/deployments/${id}`, {
+      method: 'DELETE',
+      signal: options?.signal,
+      fallback: 'Failed to delete site.',
+    })
+    if (!result.ok) return result
 
-      return { ok: true, data: { status: 'archived' } }
-    } catch (error) {
-      return { ok: false, error: toServiceError(error, 'Failed to delete site.') }
+    const payload = result.data
+    if (!isArchivedStatusPayload(payload)) {
+      return errorResult('Deployment delete response was invalid.')
     }
+
+    return { ok: true, data: { status: 'archived' } }
   },
 
   async restore(id, options) {
-    try {
-      const response = await fetch(`/api/deployments/${id}/restore`, {
-        method: 'POST',
-        signal: options?.signal,
-      })
-      const payload = await readJson(response)
-      if (!response.ok) {
-        return { ok: false, error: getResponseError(response, payload, 'Failed to restore site.') }
-      }
-      if (!isRecord(payload) || typeof payload.deploymentId !== 'string') {
-        return errorResult('Deployment restore response was invalid.')
-      }
+    const result = await apiJsonRequest(`/api/deployments/${id}/restore`, {
+      method: 'POST',
+      signal: options?.signal,
+      fallback: 'Failed to restore site.',
+    })
+    if (!result.ok) return result
 
-      const data: RestoreDeploymentResult = { deploymentId: payload.deploymentId }
-      return { ok: true, data }
-    } catch (error) {
-      return { ok: false, error: toServiceError(error, 'Failed to restore site.') }
+    const payload = result.data
+    if (!isDeploymentIdPayload(payload)) {
+      return errorResult('Deployment restore response was invalid.')
     }
+
+    const data: RestoreDeploymentResult = { deploymentId: payload.deploymentId }
+    return { ok: true, data }
   },
 }

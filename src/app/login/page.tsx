@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, AlertCircle } from 'lucide-react'
+import { AlertCircleIcon, Building2Icon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { TextInput } from '@/components/forms'
 import { createClient } from '@/lib/supabase/client'
@@ -115,11 +115,7 @@ export default function LoginPage() {
         <div className="min-h-screen min-h-[100dvh] grid place-items-center bg-background relative overflow-hidden text-foreground antialiased">
             {/* Dot pattern overlay (now simplified without inline logic) */}
             <div
-                className="absolute inset-0 pointer-events-none opacity-20"
-                style={{
-                    backgroundImage: 'radial-gradient(circle at center, rgb(var(--foreground-muted)) 1px, transparent 1px)',
-                    backgroundSize: '24px 24px',
-                }}
+                className="absolute inset-0 pointer-events-none opacity-20 bg-login-dot-pattern bg-[length:24px_24px]"
             />
 
             <div className={cn(
@@ -128,7 +124,7 @@ export default function LoginPage() {
             )}>
 
                 <div className="flex flex-col items-center mb-10">
-                    <Building2 className="w-8 h-8 text-accent mb-4" />
+                    <Building2Icon className="w-8 h-8 text-accent mb-4" />
                     <h1 className="font-serif text-4xl font-semibold text-foreground leading-tight tracking-tight mb-2 text-center">
                         Dream Land Reality
                     </h1>
@@ -196,7 +192,7 @@ export default function LoginPage() {
 
                     {error && (
                         <div role="alert" aria-live="polite" className="mt-4 flex items-start gap-3 rounded-md border border-error/20 bg-error/10 p-3 px-4 text-body-sm text-error animate-fade-in duration-300">
-                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                            <AlertCircleIcon className="h-4 w-4 mt-0.5 shrink-0" />
                             <span>{error}</span>
                         </div>
                     )}

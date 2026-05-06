@@ -3,42 +3,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
+import { ActiveStepDetail } from '@/components/deploy/active-step-detail'
+import { makeDeploySteps } from '@/components/deploy/deploy-steps'
+import { StepTrack } from '@/components/deploy/step-track'
+import { ValidationErrorModal } from '@/components/editor/validation-error-modal'
 import { useWizardStore } from '@/stores/wizard-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useDeployTransitionStore } from '@/stores/deploy-transition-store'
 import { uploadPendingImages, replaceBlobUrls } from '@/lib/utils/upload-pending-images'
 import { validateDeployReady } from '@/lib/deploy/validators'
-import { startDeployment } from '@/services/deploy'
-import { deploymentService } from '@/services/deployment'
-import { DEPLOY_STEP_LABELS } from '@/types'
-import type { DeployStepState, DeployStepId, DeployEvent, SiteData } from '@/types'
+import { useDeploymentQuery, useActiveDeploymentGateQuery } from '@/hooks/queries/use-deployments-query'
+import {
+  useCancelDeploymentMutation,
+  useStartDeploymentMutation,
+} from '@/hooks/mutations/use-deployment-mutation'
+import { useDeploymentStreamQuery } from '@/hooks/mutations/use-deployment-stream'
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  CopyIcon,
+  SpinnerCircleIcon,
+  XIcon,
+} from '@/components/icons'
+import type { DeployStepState, SiteData } from '@/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const STEP_SHORT: Record<DeployStepId, string> = {
-  upload_images: 'Images',
-  create_repo:   'Repo',
-  inject_manifest: 'Data',
-  cloudflare_setup: 'Hosting',
-  save_record:   'Save',
-  cf_build:      'Build',
-}
-
-const FIRST_DEPLOY_STEPS: DeployStepId[] = [
-  'upload_images', 'create_repo', 'inject_manifest',
-  'cloudflare_setup', 'save_record', 'cf_build',
-]
-const REDEPLOY_STEPS: DeployStepId[] = [
-  'upload_images', 'inject_manifest', 'save_record', 'cf_build',
-]
-
-function makeSteps(isRedeploy: boolean): DeployStepState[] {
-  return (isRedeploy ? REDEPLOY_STEPS : FIRST_DEPLOY_STEPS).map((id) => ({
-    id,
-    label: DEPLOY_STEP_LABELS[id],
-    status: 'pending',
-  }))
-}
 
 function previewSlug(name: string): string {
   return name
@@ -58,76 +48,6 @@ function getCurrentSiteData(): SiteData {
       ? { _collections: store.collectionData }
       : {}),
   }
-}
-
-// ── Step dot ──────────────────────────────────────────────────────────────────
-
-function StepDot({ status }: { status: DeployStepState['status'] }) {
-  return (
-    <div className={cn(
-      'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200',
-      status === 'done'    && 'bg-success/15 border border-success/40',
-      status === 'running' && 'bg-amber-400/15 border border-amber-400/50',
-      status === 'error'   && 'bg-error/15 border border-error/40',
-      status === 'pending' && 'border border-white/10 bg-white/[0.03]',
-    )}>
-      {status === 'done' && (
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-          strokeWidth="2" strokeLinecap="round" className="text-success">
-          <path d="M2.5 7l3 3L11.5 4" />
-        </svg>
-      )}
-      {status === 'running' && (
-        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-      )}
-      {status === 'error' && (
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-          strokeWidth="2" strokeLinecap="round" className="text-error">
-          <path d="M3 3l8 8M11 3L3 11" />
-        </svg>
-      )}
-      {status === 'pending' && (
-        <div className="w-1 h-1 rounded-full bg-white/20" />
-      )}
-    </div>
-  )
-}
-
-// ── Step track ────────────────────────────────────────────────────────────────
-
-function StepTrack({ steps }: { steps: DeployStepState[] }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center">
-        {steps.map((step, i) => (
-          <div key={step.id} className="flex items-center flex-1 last:flex-none">
-            <StepDot status={step.status} />
-            {i < steps.length - 1 && (
-              <div className={cn(
-                'h-px flex-1 mx-1 transition-colors duration-300',
-                step.status === 'done' ? 'bg-success/25' : 'bg-white/[0.07]',
-              )} />
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="flex">
-        {steps.map((step) => (
-          <div key={step.id} className="flex-1 flex justify-center">
-            <span className={cn(
-              'text-[10px] tracking-wide transition-colors duration-200',
-              step.status === 'done'    && 'text-success/50',
-              step.status === 'running' && 'text-amber-400/80 font-medium',
-              step.status === 'error'   && 'text-error/70',
-              step.status === 'pending' && 'text-muted-foreground/30',
-            )}>
-              {STEP_SHORT[step.id]}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -156,8 +76,10 @@ export default function DeployPage() {
   const [isDashboardNav, setIsDashboardNav] = useState(false)
   const [isEditNav, setIsEditNav] = useState(false)
   const [isVisitNav, setIsVisitNav] = useState(false)
+  const [pollingDeploymentId, setPollingDeploymentId] = useState<string | null>(null)
+  const [validationState, setValidationState] = useState<ReturnType<typeof validateDeployReady> | null>(null)
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const zombieCancelAttemptRef = useRef<string | null>(null)
 
   const isRedeploy = wizardDeploymentId !== null
   const siteSlug = previewSlug(projectName ?? '')
@@ -173,121 +95,127 @@ export default function DeployPage() {
   }, [selectedTemplate, projectName])
   const productionReadinessWarnings = deployWarnings.filter((warning) => warning.startsWith('Production readiness:'))
   const gateAssetWarnings = deployWarnings.filter((warning) => warning.includes('download_unavailable'))
+  const { data: activeGate, refetch: reloadActiveGate } = useActiveDeploymentGateQuery()
+  const { mutate: cancelActiveDeployment } = useCancelDeploymentMutation()
+  const deploymentStartMutation = useStartDeploymentMutation()
+  const pollingDeploymentQuery = useDeploymentQuery(pollingDeploymentId, {
+    enabled: isPolling,
+    refetchInterval: isPolling ? 5_000 : false,
+  })
 
   useEffect(() => {
     useDeployTransitionStore.getState().setTransitioning(false)
     if (!selectedTemplate) router.replace('/')
-
-    // Mount-time guard: if a deployment is in progress, redirect straight to its
-    // progress page. If it looks stuck (zombie), auto-cancel it so the user can retry.
-    deploymentService.getActive()
-      .then((result) => {
-        if (!result.ok) return
-        const { deployment, isLikelyStuck } = result.data
-        if (!deployment) return
-        if (isLikelyStuck) {
-          // Zombie — silently cancel it and stay on confirm so user can retry
-          deploymentService.update(deployment.id, { action: 'cancel', siteData: {} as SiteData }).catch(() => {})
-        } else {
-          // Genuine in-progress deployment — take the user straight to it
-          router.replace(`/deployments/${deployment.id}/progress`)
-        }
-      })
-      .catch(() => { /* network failure — let the 429 in handleDeploy be the fallback */ })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [router, selectedTemplate])
 
   useEffect(() => {
-    return () => {
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    if (view !== 'confirm') return
+    const gate = activeGate
+    const deployment = gate?.deployment
+    if (!deployment) return
+
+    if (gate.isLikelyStuck) {
+      if (zombieCancelAttemptRef.current === deployment.id) return
+      zombieCancelAttemptRef.current = deployment.id
+      cancelActiveDeployment(deployment.id)
+      return
     }
-  }, [])
+
+    router.replace(`/deployments/${deployment.id}/progress`)
+  }, [activeGate, cancelActiveDeployment, router, view])
 
   // ── Polling fallback ────────────────────────────────────────────────────────
 
   function startPolling(deployId: string) {
-    if (pollRef.current) return
+    setPollingDeploymentId(deployId)
     setIsPolling(true)
-    pollRef.current = setInterval(async () => {
-      try {
-        const result = await deploymentService.get(deployId)
-        if (!result.ok) return
-        const dep = result.data.deployment
-        if (!dep) return
-        if (dep.status === 'live') {
-          setSiteUrl(dep.stable_url ?? dep.live_url)
-          setView('success')
-          setIsPolling(false)
-          clearInterval(pollRef.current!); pollRef.current = null
-          setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })))
-        } else if (dep.status === 'failed') {
-          setErrorMsg(dep.error_message ?? 'Deployment failed')
-          setBuildLogs(dep.build_logs ?? null)
-          setView('failed')
-          setIsPolling(false)
-          clearInterval(pollRef.current!); pollRef.current = null
-        } else if (dep.status === 'building' || dep.status === 'deploying') {
-          setSteps((prev) => {
-            if (prev.some((s) => s.status === 'running')) return prev
-            const idx = prev.findIndex((s) => s.status === 'pending')
-            if (idx === -1) return prev
-            return prev.map((s, i) => i === idx ? { ...s, status: 'running', message: 'In progress…' } : s)
-          })
-        }
-      } catch { /* keep polling */ }
-    }, 5_000)
   }
+
+  useEffect(() => {
+    if (!isPolling) return
+    const dep = pollingDeploymentQuery.data?.deployment
+    if (!dep) return
+
+    if (dep.status === 'live') {
+      setSiteUrl(dep.stable_url ?? dep.live_url)
+      setView('success')
+      setIsPolling(false)
+      setPollingDeploymentId(null)
+      setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })))
+      return
+    }
+
+    if (dep.status === 'failed') {
+      setErrorMsg(dep.error_message ?? 'Deployment failed')
+      setBuildLogs(dep.build_logs ?? null)
+      setView('failed')
+      setIsPolling(false)
+      setPollingDeploymentId(null)
+      return
+    }
+
+    if (dep.status === 'building' || dep.status === 'deploying') {
+      setSteps((prev) => {
+        if (prev.some((s) => s.status === 'running')) return prev
+        const idx = prev.findIndex((s) => s.status === 'pending')
+        if (idx === -1) return prev
+        return prev.map((s, i) => i === idx ? { ...s, status: 'running', message: 'In progress…' } : s)
+      })
+    }
+  }, [isPolling, pollingDeploymentQuery.data])
+
+  const deploymentStream = useDeploymentStreamQuery({
+    onEvent: (event) => {
+      setSteps((prev) =>
+        prev.map((s) => s.id === event.step ? { ...s, status: event.status, message: event.message } : s)
+      )
+      if (event.step === 'cf_build' && event.status === 'done') {
+        setSiteUrl(event.data?.siteUrl ?? null)
+        setView('success')
+        setIsPolling(false)
+        setPollingDeploymentId(null)
+      }
+      if (event.status === 'error') {
+        setErrorMsg(event.message)
+        setView('failed')
+        setIsPolling(false)
+        setPollingDeploymentId(null)
+      }
+    },
+    onFallback: startPolling,
+  })
 
   // ── SSE stream ──────────────────────────────────────────────────────────────
 
   async function connectSSE(deployId: string) {
-    try {
-      const res = await fetch(`/api/deploy/${deployId}/stream`)
-      if (!res.ok || !res.body) { startPolling(deployId); return }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n\n')
-        buffer = lines.pop() ?? ''
-
-        for (const chunk of lines) {
-          const line = chunk.replace(/^data:\s*/, '').trim()
-          if (!line) continue
-          try {
-            const event = JSON.parse(line) as DeployEvent
-            setSteps((prev) =>
-              prev.map((s) => s.id === event.step ? { ...s, status: event.status, message: event.message } : s)
-            )
-            if (event.step === 'cf_build' && event.status === 'done') {
-              setSiteUrl(event.data?.siteUrl ?? null)
-              setView('success')
-            }
-            if (event.status === 'error') {
-              setErrorMsg(event.message)
-              setView('failed')
-            }
-          } catch { /* malformed line */ }
-        }
-      }
-    } catch {
-      startPolling(deployId)
-    }
+    await deploymentStream.connect(deployId)
   }
 
   // ── Deploy action ───────────────────────────────────────────────────────────
 
   async function handleDeploy() {
     setIsDeployPending(true)
-    setView('preparing')
     try {
       const editorStore = useEditorStore.getState()
       const wizardStore = useWizardStore.getState()
+      const selectedTemplate = wizardStore.selectedTemplate
+      if (!selectedTemplate) {
+        throw new Error('Select a template before deploying.')
+      }
+
+      const preflight = validateDeployReady(
+        getCurrentSiteData(),
+        selectedTemplate.manifest,
+        wizardStore.projectName ?? ''
+      )
+      if (!preflight.valid) {
+        setValidationState(preflight)
+        setView('confirm')
+        setIsDeployPending(false)
+        return
+      }
+
+      setView('preparing')
       const { urlMap, failed } = await uploadPendingImages(editorStore.pendingImages)
       if (failed.length > 0) {
         throw new Error(`${failed.length} image(s) failed to upload. Please try again.`)
@@ -301,7 +229,7 @@ export default function DeployPage() {
         ...(Object.keys(finalCollectionData).length > 0 ? { _collections: finalCollectionData } : {}),
       }
 
-      const deployResult = await startDeployment({
+      const deployResult = await deploymentStartMutation.mutateAsync({
         projectName: wizardStore.projectName ?? '',
         templateId: wizardStore.selectedTemplate?.id ?? '',
         siteData: site_data,
@@ -313,8 +241,8 @@ export default function DeployPage() {
           // Still rate-limited (very rare now with zombie auto-cancel) —
           // redirect to the active deployment's progress page
           try {
-            const activeResult = await deploymentService.getActive()
-            if (activeResult.ok && activeResult.data.deployment) {
+            const activeResult = await reloadActiveGate()
+            if (activeResult.data?.deployment) {
               router.replace(`/deployments/${activeResult.data.deployment.id}/progress`)
               setIsDeployPending(false)
               return
@@ -335,7 +263,7 @@ export default function DeployPage() {
 
       const newDeployId = deployResult.data.deploymentId
       setFinalDeploymentId(newDeployId)
-      setSteps(makeSteps(isRedeploy))
+      setSteps(makeDeploySteps(isRedeploy))
       setView('deploying')
       setIsDeployPending(false)
       useWizardStore.getState().reset()
@@ -358,9 +286,13 @@ export default function DeployPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="dark fixed inset-0 flex flex-col" style={{
-      background: 'radial-gradient(ellipse 120% 80% at 50% -10%, hsl(var(--surface)) 0%, hsl(var(--background)) 55%)',
-    }}>
+    <div className="dark fixed inset-0 flex flex-col bg-deploy-page">
+      <ValidationErrorModal
+        open={!!validationState}
+        onClose={() => setValidationState(null)}
+        errors={validationState?.errors ?? []}
+        warnings={validationState?.warnings ?? []}
+      />
 
       {/* ── Back link — only on confirm ── */}
       {view === 'confirm' && (
@@ -369,10 +301,7 @@ export default function DeployPage() {
             onClick={() => router.back()}
             className="flex items-center gap-1.5 text-sm text-muted-foreground/60 hover:text-foreground/80 active:opacity-50 transition-all duration-100"
           >
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-              strokeWidth="1.4" strokeLinecap="round">
-              <path d="M9 11L5 7l4-4" />
-            </svg>
+            <ChevronLeftIcon width={13} height={13} strokeWidth={1.4} />
             Back to editor
           </button>
         </div>
@@ -424,13 +353,13 @@ export default function DeployPage() {
               </div>
 
               {productionReadinessWarnings.length > 0 && (
-                <div className="bg-amber-400/[0.06] border border-amber-400/15 rounded-lg px-3 py-2.5 space-y-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80">
+                <div className="bg-warning/[0.06] border border-warning/15 rounded-lg px-3 py-2.5 space-y-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-warning/80">
                     Production readiness
                   </p>
                   <ul className="space-y-1.5">
                     {productionReadinessWarnings.map((warning, index) => (
-                      <li key={`${warning}-${index}`} className="text-xs text-amber-400/70 leading-relaxed">
+                      <li key={`${warning}-${index}`} className="text-xs text-warning/70 leading-relaxed">
                         {warning.replace(/^Production readiness:\s*/, '')}
                       </li>
                     ))}
@@ -439,13 +368,13 @@ export default function DeployPage() {
               )}
 
               {gateAssetWarnings.length > 0 && (
-                <div className="bg-amber-400/[0.06] border border-amber-400/15 rounded-lg px-3 py-2.5 space-y-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-amber-400/80">
+                <div className="bg-warning/[0.06] border border-warning/15 rounded-lg px-3 py-2.5 space-y-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-warning/80">
                     Gate asset warning
                   </p>
                   <ul className="space-y-1.5">
                     {gateAssetWarnings.map((warning, index) => (
-                      <li key={`${warning}-${index}`} className="text-xs text-amber-400/70 leading-relaxed">
+                      <li key={`${warning}-${index}`} className="text-xs text-warning/70 leading-relaxed">
                         {warning}
                       </li>
                     ))}
@@ -460,10 +389,7 @@ export default function DeployPage() {
               >
                 {isDeployPending ? (
                   <span className="flex items-center justify-center gap-2">
-                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                      strokeWidth="1.5" className="animate-spin" style={{ animationDuration: '1s' }}>
-                      <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                    </svg>
+                    <SpinnerCircleIcon width={13} height={13} strokeWidth={1.5} className="animate-spin" />
                     Starting…
                   </span>
                 ) : (isRedeploy ? 'Publish Changes' : 'Deploy Site')}
@@ -475,11 +401,7 @@ export default function DeployPage() {
           {view === 'preparing' && (
             <div className="text-center space-y-4">
               <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                  strokeWidth="1.5" className="animate-spin text-foreground/40"
-                  style={{ animationDuration: '1s' }}>
-                  <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                </svg>
+                <SpinnerCircleIcon width={18} height={18} strokeWidth={1.5} className="animate-spin text-foreground/40" />
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-foreground/90">Preparing…</p>
@@ -493,11 +415,7 @@ export default function DeployPage() {
             <div className="space-y-6">
               <div className="text-center space-y-2">
                 <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                    strokeWidth="1.5" className="animate-spin text-foreground/40"
-                    style={{ animationDuration: '1s' }}>
-                    <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                  </svg>
+                  <SpinnerCircleIcon width={18} height={18} strokeWidth={1.5} className="animate-spin text-foreground/40" />
                 </div>
                 <h1 className="font-serif text-2xl text-foreground">
                   {isRedeploy ? 'Publishing Changes' : 'Deploying Your Site'}
@@ -506,24 +424,11 @@ export default function DeployPage() {
 
               {steps.length > 0 && <StepTrack steps={steps} />}
 
-              <div className="bg-white/[0.03] border border-white/[0.07] rounded-lg px-4 py-3 text-center space-y-1">
-                {activeStep ? (
-                  <>
-                    <p className="text-sm font-medium text-foreground/90">{activeStep.label}</p>
-                    {activeStep.message && (
-                      <p className="text-xs text-muted-foreground/60">{activeStep.message}</p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground/60">Starting…</p>
-                )}
-                {isPolling && (
-                  <p className="text-xs text-muted-foreground/40 pt-0.5">Reconnecting…</p>
-                )}
-                <p className="text-xs text-muted-foreground/30 pt-0.5">
-                  {doneCount} of {steps.length} steps · 1–3 min
-                </p>
-              </div>
+              <ActiveStepDetail
+                activeStep={activeStep}
+                isPolling={isPolling}
+                footer={`${doneCount} of ${steps.length} steps · 1–3 min`}
+              />
             </div>
           )}
 
@@ -532,10 +437,7 @@ export default function DeployPage() {
             <div className="space-y-5">
               <div className="text-center space-y-2">
                 <div className="w-10 h-10 rounded-full bg-success/10 border border-success/20 flex items-center justify-center mx-auto">
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                    strokeWidth="2" strokeLinecap="round" className="text-success">
-                    <path d="M4 10l4.5 4.5L16 6" />
-                  </svg>
+                  <CheckIcon width={18} height={18} strokeWidth={2} className="text-success" />
                 </div>
                 <h1 className="font-serif text-2xl text-foreground">Your Site is Live</h1>
                 <p className="text-sm text-muted-foreground/60">Built and deployed successfully.</p>
@@ -552,14 +454,9 @@ export default function DeployPage() {
                     )}
                   >
                     {copied ? (
-                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <path d="M2 7l3 3 7-6" />
-                      </svg>
+                      <CheckIcon width={13} height={13} strokeWidth={2} />
                     ) : (
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" />
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                      </svg>
+                      <CopyIcon width={13} height={13} strokeWidth={1.5} />
                     )}
                   </button>
                 </div>
@@ -572,10 +469,7 @@ export default function DeployPage() {
             <div className="space-y-5">
               <div className="text-center space-y-2">
                 <div className="w-10 h-10 rounded-full bg-error/10 border border-error/20 flex items-center justify-center mx-auto">
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                    strokeWidth="2" strokeLinecap="round" className="text-error">
-                    <path d="M4 4l12 12M16 4L4 16" />
-                  </svg>
+                  <XIcon width={18} height={18} strokeWidth={2} className="text-error" />
                 </div>
                 <h1 className="font-serif text-2xl text-foreground">Deployment Failed</h1>
                 <p className="text-sm text-muted-foreground/60">Something went wrong during deployment.</p>
@@ -596,11 +490,12 @@ export default function DeployPage() {
                       className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-muted-foreground/50 hover:text-foreground/70 hover:bg-white/[0.03] active:bg-white/5 transition-all duration-100"
                     >
                       <span>Build logs</span>
-                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor"
-                        strokeWidth="1.5" strokeLinecap="round"
-                        className={cn('transition-transform duration-150', logsExpanded && 'rotate-180')}>
-                        <path d="M2 4l4 4 4-4" />
-                      </svg>
+                      <ChevronDownIcon
+                        width={11}
+                        height={11}
+                        strokeWidth={1.5}
+                        className={cn('transition-transform duration-150', logsExpanded && 'rotate-180')}
+                      />
                     </button>
                     {logsExpanded && (
                       <pre className="text-xs text-muted-foreground/60 bg-white/[0.02] p-3 overflow-auto max-h-48 whitespace-pre-wrap break-words border-t border-white/[0.07]">
@@ -638,10 +533,7 @@ export default function DeployPage() {
                 >
                   {isEditNav ? (
                     <span className="flex items-center justify-center gap-1.5">
-                      <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                        strokeWidth="1.5" className="animate-spin" style={{ animationDuration: '1s' }}>
-                        <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                      </svg>
+                      <SpinnerCircleIcon width={11} height={11} strokeWidth={1.5} className="animate-spin" />
                       Loading…
                     </span>
                   ) : 'Edit Site'}
@@ -652,10 +544,7 @@ export default function DeployPage() {
                   className="h-9 px-3.5 rounded-lg text-muted-foreground/60 text-sm hover:text-foreground/80 active:scale-[0.97] active:opacity-60 transition-all duration-100 disabled:opacity-30"
                 >
                   {isDashboardNav ? (
-                    <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                      strokeWidth="1.5" className="animate-spin" style={{ animationDuration: '1s' }}>
-                      <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                    </svg>
+                    <SpinnerCircleIcon width={11} height={11} strokeWidth={1.5} className="animate-spin" />
                   ) : 'Dashboard'}
                 </button>
               </>
@@ -675,10 +564,7 @@ export default function DeployPage() {
                 >
                   {isRetrying ? (
                     <span className="flex items-center justify-center gap-2">
-                      <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                        strokeWidth="1.5" className="animate-spin" style={{ animationDuration: '1s' }}>
-                        <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                      </svg>
+                      <SpinnerCircleIcon width={12} height={12} strokeWidth={1.5} className="animate-spin" />
                       Loading…
                     </span>
                   ) : 'Try Again'}
@@ -690,10 +576,7 @@ export default function DeployPage() {
                 >
                   {isDashboardNav ? (
                     <span className="flex items-center justify-center gap-2">
-                      <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-                        strokeWidth="1.5" className="animate-spin" style={{ animationDuration: '1s' }}>
-                        <circle cx="10" cy="10" r="7" strokeDasharray="28 16" />
-                      </svg>
+                      <SpinnerCircleIcon width={11} height={11} strokeWidth={1.5} className="animate-spin" />
                       Loading…
                     </span>
                   ) : 'Dashboard'}

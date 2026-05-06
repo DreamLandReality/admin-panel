@@ -5,6 +5,8 @@
  * Detects cycles and validates dependencies for the contextual field grouping system.
  */
 
+import { log } from '@/lib/log'
+
 export interface ShowWhenCondition {
   sibling: string
   value?: any
@@ -85,7 +87,7 @@ export class DependencyAnalyzer {
       const siblingNode = nodes.get(sibling)
 
       if (!siblingNode) {
-        console.warn(
+        log.warn(
           `[DependencyAnalyzer] Field "${fieldKey}" has uiShowWhen referencing non-existent sibling "${sibling}"`
         )
         continue
@@ -173,7 +175,7 @@ export class DependencyAnalyzer {
       if (visited.has(key)) return true
       if (visiting.has(key)) {
         // Cycle detected
-        console.error(`[DependencyAnalyzer] Cycle detected involving field "${key}"`)
+        log.error(`[DependencyAnalyzer] Cycle detected involving field "${key}"`)
         return false
       }
 

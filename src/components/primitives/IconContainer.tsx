@@ -12,9 +12,9 @@ const variantMap = {
   default: 'bg-white/5 border border-white/10',
   muted: 'bg-border/40',
   surface: 'bg-foreground/[0.02] border border-border',
-  success: 'bg-emerald-400/10 border border-emerald-400/20',
-  error: 'bg-red-500/10 border border-red-500/20',
-  warning: 'bg-amber-400/5 border border-amber-400/20',
+  success: 'bg-success/10 border border-success/20',
+  error: 'bg-error/10 border border-error/20',
+  warning: 'bg-warning/5 border border-warning/20',
   accent: 'bg-foreground border border-foreground',
 } as const
 

@@ -1,14 +1,10 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiData, apiError } from '@/lib/api/response'
 
 export async function GET() {
-  const supabase = createClient()
-
-  // Verify authenticated user
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canManageTemplates')
+  if (!auth.ok) return auth.response
+  const { supabase } = auth
 
   const { data, error } = await supabase
     .from('templates')
@@ -16,6 +12,6 @@ export async function GET() {
     .eq('is_active', true)
     .order('created_at', { ascending: true })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ data })
+  if (error) return apiError(error.message, 500)
+  return apiData(data)
 }

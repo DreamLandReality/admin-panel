@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils/cn'
 import { AnimatedCard } from '@/components/ui/animated-card'
 import { R2Image } from '@/components/r2-image'
+import { CheckIcon, ImageFrameIcon } from '@/components/icons'
 import type { Template } from '@/types'
 
 export function TemplateCard({
@@ -37,19 +38,14 @@ export function TemplateCard({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground/30">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-              <rect x="6" y="6" width="28" height="28" rx="3" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M6 28l8-8 6 6 4-4 10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <ImageFrameIcon width={40} height={40} strokeWidth={1.5} />
           </div>
         )}
 
         {isSelected && (
           <div className="absolute inset-0 bg-foreground/10 flex items-center justify-center">
             <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M2.5 7l3 3 6-6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <CheckIcon width={14} height={14} stroke="white" strokeWidth={1.5} />
             </div>
           </div>
         )}

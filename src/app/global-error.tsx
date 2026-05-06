@@ -1,6 +1,7 @@
 'use client'
 import { useEffect } from 'react'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { log } from '@/lib/log'
 
 export default function GlobalError({
   error,
@@ -10,9 +11,7 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[GlobalError]', error)
-    }
+    log.error('[GlobalError]', error)
   }, [error])
 
   return (

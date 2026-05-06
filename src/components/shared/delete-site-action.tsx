@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash } from 'lucide-react'
+import { TrashIcon } from '@/components/icons'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils/cn'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
@@ -72,7 +72,7 @@ export function DeleteSiteAction({
         }}
         className={cn(className)}
       >
-        {children ?? <Trash className="h-3.5 w-3.5" />}
+        {children ?? <TrashIcon className="h-3.5 w-3.5" />}
       </button>
 
       <ConfirmModal

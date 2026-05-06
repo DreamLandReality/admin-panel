@@ -1,5 +1,5 @@
-import { notFound, redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { notFound } from 'next/navigation'
+import { requirePageCapability } from '@/lib/auth/page-guards'
 import type { Deployment, Template } from '@/types'
 import { EditDeploymentLoader } from './edit-deployment-loader'
 
@@ -10,14 +10,7 @@ export default async function EditorPage({
 }: {
   params: { id: string }
 }) {
-  const supabase = createClient()
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) redirect('/login')
+  const { supabase, user } = await requirePageCapability('canEditSites')
 
   const { data: deployment } = await supabase
     .from('deployments')

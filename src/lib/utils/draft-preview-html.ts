@@ -24,8 +24,8 @@ export function buildDraftPreviewHtml(params: {
   const safeBg  = bgImage && bgImage.startsWith('http') ? bgImage : null
 
   const bgStyle = safeBg
-    ? `background-image: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%), url('${safeBg}'); background-size: cover; background-position: center;`
-    : `background: linear-gradient(135deg, #0f0f1a 0%, #1a1428 50%, #0d1b2a 100%);`
+    ? `background-image: linear-gradient(to bottom, color-mix(in srgb, black 30%, transparent) 0%, color-mix(in srgb, black 70%, transparent) 100%), url('${safeBg}'); background-size: cover; background-position: center;`
+    : `background: linear-gradient(135deg, black 0%, midnightblue 50%, darkslategray 100%);`
 
   return `<!DOCTYPE html>
 <html>
@@ -44,17 +44,17 @@ export function buildDraftPreviewHtml(params: {
     font-size: 11px;
     font-family: 'Helvetica Neue', Arial, sans-serif;
     letter-spacing: 0.25em; text-transform: uppercase;
-    color: rgba(255,255,255,0.45); margin-bottom: 20px;
+    color: white; opacity: 0.45; margin-bottom: 20px;
   }
   .title {
     font-size: 60px; font-weight: 400; line-height: 1.05;
-    letter-spacing: -0.02em; color: #fff;
+    letter-spacing: -0.02em; color: white;
     margin-bottom: 20px; max-width: 800px;
   }
   .subtitle {
     font-size: 20px;
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    font-weight: 300; color: rgba(255,255,255,0.6);
+    font-weight: 300; color: white; opacity: 0.6;
     letter-spacing: 0.03em; max-width: 600px;
   }
 </style>

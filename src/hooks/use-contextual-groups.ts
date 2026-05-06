@@ -9,6 +9,7 @@ import { useMemo, useCallback, useRef } from 'react'
 import { DependencyAnalyzer } from '@/lib/utils/dependency-analyzer'
 import { ContextualGroupManager } from '@/lib/utils/contextual-group-manager'
 import { FieldVisibilityController } from '@/lib/utils/field-visibility-controller'
+import { log } from '@/lib/log'
 import type { FieldSchema } from '@/lib/utils/dependency-analyzer'
 import type { ContextualGroup } from '@/lib/utils/contextual-group-manager'
 import type { VisibilityState } from '@/lib/utils/field-visibility-controller'
@@ -47,8 +48,8 @@ export function useContextualGroups({
     const endTime = performance.now()
 
     if (debug) {
-      console.log('[ContextualGroups] Dependency analysis completed in', endTime - startTime, 'ms')
-      console.log('[ContextualGroups] Graph:', {
+      log.info('[ContextualGroups] Dependency analysis completed in', endTime - startTime, 'ms')
+      log.info('[ContextualGroups] Graph:', {
         nodes: graph.nodes.size,
         roots: graph.roots.length,
         topologicalOrder: graph.topologicalOrder,
@@ -58,10 +59,10 @@ export function useContextualGroups({
     // Validate dependencies
     const validation = analyzer.current.validateDependencies(graph)
     if (!validation.valid) {
-      console.error('[ContextualGroups] Validation errors:', validation.errors)
+      log.error('[ContextualGroups] Validation errors:', validation.errors)
     }
     if (validation.warnings.length > 0) {
-      console.warn('[ContextualGroups] Validation warnings:', validation.warnings)
+      log.warn('[ContextualGroups] Validation warnings:', validation.warnings)
     }
 
     return graph
@@ -96,8 +97,8 @@ export function useContextualGroups({
     const endTime = performance.now()
 
     if (debug) {
-      console.log('[ContextualGroups] Groups created in', endTime - startTime, 'ms')
-      console.log('[ContextualGroups] Groups:', createdGroups.map(g => ({
+      log.info('[ContextualGroups] Groups created in', endTime - startTime, 'ms')
+      log.info('[ContextualGroups] Groups:', createdGroups.map(g => ({
         id: g.id,
         triggerField: g.triggerField,
         triggerValue: g.triggerValue,
@@ -133,8 +134,8 @@ export function useContextualGroups({
       const endTime = performance.now()
 
       if (debug) {
-        console.log('[ContextualGroups] Visibility update in', endTime - startTime, 'ms')
-        console.log('[ContextualGroups] Update:', update)
+        log.info('[ContextualGroups] Visibility update in', endTime - startTime, 'ms')
+        log.info('[ContextualGroups] Update:', update)
       }
 
       // Update group visibility

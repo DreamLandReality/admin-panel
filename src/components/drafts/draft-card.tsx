@@ -6,6 +6,7 @@ import Image from 'next/image'
 import type { DraftCardData } from '@/types'
 import { ROUTES } from '@/lib/constants'
 import { formatRelativeTime } from '@/lib/utils/dashboard'
+import { ImageFrameIcon } from '@/components/icons'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { AnimatedCard } from '@/components/ui/animated-card'
 
@@ -74,10 +75,7 @@ export function DraftCard({ draft, index }: { draft: DraftCardData; index: numbe
           ) : (
             /* No thumbnail yet — simple centered icon (matches TemplateCard fallback) */
             <div className="w-full h-full flex items-center justify-center text-muted-foreground/30">
-              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                <rect x="6" y="6" width="28" height="28" rx="3" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M6 28l8-8 6 6 4-4 10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <ImageFrameIcon width={40} height={40} strokeWidth={1.5} />
             </div>
           )}
 
@@ -86,8 +84,8 @@ export function DraftCard({ draft, index }: { draft: DraftCardData; index: numbe
             {isEditDraft ? (
               <>
                 {dep?.status && <StatusBadge status={dep.status} />}
-                <span className="flex items-center gap-1 text-label font-medium uppercase tracking-label text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                <span className="flex items-center gap-1 text-label font-medium uppercase tracking-label text-warning bg-warning/10 border border-warning/20 px-1.5 py-0.5 rounded">
+                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                   In Progress
                 </span>
               </>

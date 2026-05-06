@@ -1,9 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useStore } from '@/stores/sidebar-store'
-import { useHeaderStore } from '@/stores/header-store'
-import { Menu } from 'lucide-react'
+import { useHeaderStore, type HeaderRightContent as HeaderRightContentData } from '@/stores/header-store'
+import { MenuIcon } from '@/components/icons'
 import { Heading } from '@/components/primitives'
 import { Button } from '@/components/ui/button'
 
@@ -11,7 +12,6 @@ const ROUTE_LABELS: Record<string, { overline: string; title: string }> = {
     '/': { overline: 'WORKSPACE', title: 'Portfolio' },
     '/deployments/new': { overline: 'WORKSPACE', title: 'Conceptualization' },
     '/templates': { overline: 'WORKSPACE', title: 'Templates' },
-    '/settings': { overline: 'WORKSPACE', title: 'Settings' },
     '/enquiry': { overline: 'WORKSPACE', title: 'Enquiries' },
 }
 
@@ -29,12 +29,41 @@ function resolveBreadcrumb(pathname: string) {
     return { overline: 'WORKSPACE', title: 'Dashboard' }
 }
 
+function HeaderRightContent({ content }: { content: HeaderRightContentData }) {
+    if (content.kind === 'none') return null
+
+    if (content.kind === 'page-action') {
+        return (
+            <Link href={content.href} className="group text-center min-w-[52px]">
+                <p className="font-serif text-3xl font-light leading-none text-foreground-muted group-hover:text-foreground transition-colors duration-200">
+                    +
+                </p>
+                <p className="mt-1.5 text-micro font-bold uppercase tracking-label text-foreground-muted">
+                    {content.label}
+                </p>
+            </Link>
+        )
+    }
+
+    return (
+        <div className="text-center min-w-[52px]">
+            <p className="font-serif text-3xl font-light tabular-nums leading-none text-foreground">
+                {content.currentStep}<span className="text-foreground-muted">/{content.totalSteps}</span>
+            </p>
+            <p className="mt-1.5 text-micro font-bold uppercase tracking-label text-foreground-muted">
+                {content.label}
+            </p>
+        </div>
+    )
+}
+
 export function Header() {
     const pathname = usePathname()
     const { overline, title } = resolveBreadcrumb(pathname)
     const { setMobileOpen } = useStore()
     const stats = useHeaderStore((s) => s.stats)
-    const rightContent = useHeaderStore((s) => s.rightContent)
+    const headerRight = useHeaderStore((s) => s.headerRight)
+    const hasHeaderRight = headerRight.kind !== 'none'
 
     return (
         <header className="min-h-28 px-10 py-6 flex items-center justify-between shrink-0 bg-background z-10 w-full relative">
@@ -46,7 +75,7 @@ export function Header() {
                     onClick={() => setMobileOpen(true)}
                     aria-label="Open navigation menu"
                 >
-                    <Menu size={20} />
+                    <MenuIcon width={20} height={20} />
                 </Button>
 
                 {/* Breadcrumbs */}
@@ -61,9 +90,9 @@ export function Header() {
             </div>
 
             {/* Right-side: stats + optional action */}
-            {(stats.length > 0 || rightContent) && (
+            {(stats.length > 0 || hasHeaderRight) && (
                 <div className="hidden sm:flex items-center gap-8 lg:gap-10">
-                    {rightContent}
+                    <HeaderRightContent content={headerRight} />
                     {stats.map((stat) => (
                         <div key={stat.label} className="text-center min-w-[52px]">
                             <Heading variant="stat" className={stat.colorClass ?? 'text-foreground'}>

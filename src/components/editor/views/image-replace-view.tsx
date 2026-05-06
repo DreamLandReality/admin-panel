@@ -7,7 +7,8 @@ import { buildPageList } from '@/lib/utils/page-list'
 import { postToIframe } from '@/lib/utils/iframe'
 import { useImageUpload } from '@/hooks/use-image-upload'
 import { slugify } from '@/lib/utils/slugify'
-import { Breadcrumb, PanelInput } from '../panel-inputs'
+import { Breadcrumb, PanelInput } from '../inputs'
+import { UploadIcon } from '@/components/icons'
 
 // ─── ImageReplaceView ─────────────────────────────────────────────────────────
 
@@ -105,9 +106,7 @@ export function ImageReplaceView({ iframeRef }: { iframeRef: React.RefObject<HTM
           onClick={triggerUpload}
           className="w-full py-2.5 rounded-lg text-sm bg-white/5 text-foreground hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-            <path d="M7 2v10M2 7l5-5 5 5" />
-          </svg>
+          <UploadIcon width={14} height={14} strokeWidth={1.4} />
           Replace Image
         </button>
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />

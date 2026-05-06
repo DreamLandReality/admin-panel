@@ -1,13 +1,13 @@
 'use client'
 
 import { cn } from '@/lib/utils/cn'
-import { Monitor, TabletSmartphone, Smartphone } from 'lucide-react'
+import { MonitorIcon, SmartphoneIcon, TabletSmartphoneIcon } from '@/components/icons'
 import { useUiStore } from '@/stores/ui-store'
 
 const VIEWPORT_CONFIG = {
-  mobile: { label: 'Mobile', icon: Smartphone },
-  tablet: { label: 'Tablet', icon: TabletSmartphone },
-  desktop: { label: 'Desktop', icon: Monitor },
+  mobile: { label: 'Mobile', icon: SmartphoneIcon },
+  tablet: { label: 'Tablet', icon: TabletSmartphoneIcon },
+  desktop: { label: 'Desktop', icon: MonitorIcon },
 } as const
 
 interface ViewportSwitcherProps {
@@ -56,7 +56,7 @@ export function ViewportSwitcher({
                 : 'text-muted-foreground/60 hover:text-foreground hover:bg-white/5'
             )}
           >
-            <Icon size={iconSize} strokeWidth={1.5} className="pointer-events-none" />
+            <Icon width={iconSize} height={iconSize} strokeWidth={1.5} className="pointer-events-none" />
             {showLabels && <span className="pointer-events-none">{config.label}</span>}
           </button>
         )

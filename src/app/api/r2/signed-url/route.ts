@@ -6,48 +6,43 @@
  * Response: { url: string } | { error: string }
  */
 
-import { type NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import { generateSignedUrl } from '@/lib/utils/r2-storage'
-import { createClient } from '@/lib/supabase/server'
+import { apiError, apiOk } from '@/lib/api/response'
+import { parseJsonRecordBody } from '@/lib/api/request'
+import { requireCapability } from '@/lib/api/auth'
 import { createRateLimiter } from '@/lib/rate-limit'
+import { log } from '@/lib/log'
 
 const r2Limiter = createRateLimiter({ windowMs: 60_000, max: 30 })
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Internal server error'
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // Verify authenticated user
-    const supabase = createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireCapability('canEditSites')
+    if (!auth.ok) return auth.response
+    const { user } = auth
 
     const { limited } = r2Limiter.check(user.id)
     if (limited) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+      return apiError('Too many requests', 429)
     }
 
-    let body: { objectKey?: unknown; expiresIn?: unknown; bucket?: unknown }
-    try {
-      body = await request.json()
-    } catch {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-    }
+    const bodyResult = await parseJsonRecordBody(request)
+    if (!bodyResult.ok) return bodyResult.response
+    const body = bodyResult.data
     const { objectKey, expiresIn, bucket } = body
 
     if (!objectKey || typeof objectKey !== 'string') {
-      return NextResponse.json(
-        { error: 'objectKey is required and must be a string' },
-        { status: 400 }
-      )
+      return apiError('objectKey is required and must be a string', 400)
     }
 
     // Prevent path traversal
     if (objectKey.includes('..') || objectKey.startsWith('/')) {
-      return NextResponse.json(
-        { error: 'Invalid objectKey' },
-        { status: 400 }
-      )
+      return apiError('Invalid objectKey', 400)
     }
 
     // Cap expiration to 1 hour max
@@ -61,13 +56,12 @@ export async function POST(request: NextRequest) {
 
     const signedUrl = await generateSignedUrl(objectKey, safeExpiry, targetBucket)
 
-    return NextResponse.json({ url: signedUrl })
+    return apiOk({ url: signedUrl })
   } catch (error) {
-    console.error('Error generating signed URL:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    const errorMessage = getErrorMessage(error)
+    log.event('error', 'r2.signed_url.failed', 'Failed to generate R2 signed URL', {
+      reason: errorMessage,
+    })
+    return apiError(errorMessage, 500)
   }
 }

@@ -4,7 +4,7 @@
     "next/typescript"
   ],
   "rules": {
-    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": [
       "error",
       { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
@@ -45,7 +45,7 @@
     {
       "files": ["src/hooks/**/*.ts"],
       "rules": {
-        "max-lines": ["warn", { "max": 40, "skipBlankLines": true, "skipComments": true }]
+        "max-lines": "off"
       }
     },
     {

@@ -1,10 +1,13 @@
-import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@/lib/supabase/server'
+import { requireCapability } from '@/lib/api/auth'
+import { isRecord } from '@/lib/api/contracts'
+import { apiError } from '@/lib/api/response'
+import { parseJsonRecordBody } from '@/lib/api/request'
 import { buildToolSchema } from '@/lib/ai/schema-to-tool'
 import { createRateLimiter } from '@/lib/rate-limit'
+import { log } from '@/lib/log'
 import { buildParsePrompt } from '@/prompts'
-import type { ManifestSection } from '@/types'
+import type { JsonObject, JsonValue, ManifestSection } from '@/types'
 
 const MAX_TEXT_LENGTH = 50_000
 const TIMEOUT_MS = 3 * 60 * 1000
@@ -13,15 +16,49 @@ const HEARTBEAT_MS = 5_000
 const CLAUDE_MODEL = process.env.ANTHROPIC_PARSE_MODEL ?? 'claude-sonnet-4-5-20250929'
 const GEMINI_MODEL = process.env.GEMINI_PARSE_MODEL ?? 'gemini-3-flash'
 
+interface GeminiSchema {
+  type: 'STRING' | 'NUMBER' | 'INTEGER' | 'BOOLEAN' | 'ARRAY' | 'OBJECT'
+  description?: string
+  enum?: string[]
+  properties?: Record<string, GeminiSchema>
+  items?: GeminiSchema
+  required?: string[]
+}
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+  return isRecord(value)
+}
+
+function asJsonObject(value: unknown, fallback: JsonObject = {}): JsonObject {
+  return isRecord(value) ? value as JsonObject : fallback
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'AI service error'
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function getNestedMessage(value: unknown, path: string[]): string | null {
+  let current: unknown = value
+  for (const key of path) {
+    if (!isRecord(current)) return null
+    current = current[key]
+  }
+  return typeof current === 'string' ? current : null
+}
+
 /** Recursively merge source into target. Source wins for primitives; objects merge recursively; arrays replace. */
-function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
+function deepMerge(target: JsonObject, source: JsonObject): JsonObject {
   const result = { ...target }
   for (const key of Object.keys(source)) {
     const srcVal = source[key]
     if (srcVal == null) continue
     if (Array.isArray(srcVal)) {
       result[key] = srcVal
-    } else if (typeof srcVal === 'object' && typeof result[key] === 'object' && !Array.isArray(result[key])) {
+    } else if (isJsonObject(srcVal) && isJsonObject(result[key])) {
       result[key] = deepMerge(result[key], srcVal)
     } else {
       result[key] = srcVal
@@ -34,25 +71,25 @@ function deepMerge(target: Record<string, any>, source: Record<string, any>): Re
  * Convert a Claude tool input_schema to Gemini function declaration parameters.
  * Gemini requires uppercase type names ("OBJECT", "STRING", etc.).
  */
-function toGeminiSchema(schema: any): any {
-  if (!schema || typeof schema !== 'object') return schema
-  const result: any = {}
+function toGeminiSchema(schema: unknown): GeminiSchema {
+  if (!isRecord(schema)) return { type: 'STRING' }
+  const result: GeminiSchema = { type: 'STRING' }
 
-  const rawType = (schema.type as string | undefined)?.toUpperCase()
+  const rawType = typeof schema.type === 'string' ? schema.type.toUpperCase() : undefined
   result.type = rawType && ['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'].includes(rawType)
-    ? rawType
+    ? rawType as GeminiSchema['type']
     : 'STRING' // default — prevents Gemini rejecting typeless fields in required
 
-  if (schema.description) result.description = schema.description
-  if (schema.enum) result.enum = schema.enum
-  if (schema.properties) {
+  if (typeof schema.description === 'string') result.description = schema.description
+  if (Array.isArray(schema.enum) && schema.enum.every((item) => typeof item === 'string')) {
+    result.enum = schema.enum
+  }
+  if (isRecord(schema.properties)) {
     result.properties = {}
-    for (const [k, v] of Object.entries(schema.properties as Record<string, any>)) {
+    for (const [k, v] of Object.entries(schema.properties)) {
       const converted = toGeminiSchema(v)
       // Only include properties that resolved to a valid schema object
-      if (converted && typeof converted === 'object') {
-        result.properties[k] = converted
-      }
+      result.properties[k] = converted
     }
     result.type = 'OBJECT'
   }
@@ -60,8 +97,9 @@ function toGeminiSchema(schema: any): any {
     result.items = toGeminiSchema(schema.items)
     result.type = 'ARRAY'
   }
-  if (schema.required && result.properties) {
-    const filtered = (schema.required as string[]).filter((k: string) => k in result.properties)
+  const properties = result.properties
+  if (Array.isArray(schema.required) && properties) {
+    const filtered = schema.required.filter((key): key is string => typeof key === 'string' && key in properties)
     if (filtered.length) result.required = filtered
   }
   return result
@@ -73,7 +111,7 @@ async function runClaude(
   userPrompt: string,
   tool: ReturnType<typeof buildToolSchema>,
   signal: AbortSignal
-): Promise<Record<string, any>> {
+): Promise<JsonObject> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not configured')
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -91,7 +129,7 @@ async function runClaude(
 
   const toolUse = response.content.find((c) => c.type === 'tool_use')
   if (!toolUse || toolUse.type !== 'tool_use') throw new Error('Claude did not return structured data')
-  return toolUse.input as Record<string, any>
+  return asJsonObject(toolUse.input)
 }
 
 /** Gemini — forced function calling via REST API, returns structured property data. */
@@ -100,7 +138,7 @@ async function runGemini(
   userPrompt: string,
   tool: ReturnType<typeof buildToolSchema>,
   signal: AbortSignal
-): Promise<Record<string, any>> {
+): Promise<JsonObject> {
   if (!process.env.GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY is not configured')
 
   const body = {
@@ -128,13 +166,22 @@ async function runGemini(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err?.error?.message ?? `Gemini API error ${res.status}`)
+    throw new Error(getNestedMessage(err, ['error', 'message']) ?? `Gemini API error ${res.status}`)
   }
 
-  const data = await res.json()
-  const part = data?.candidates?.[0]?.content?.parts?.[0]
-  if (!part?.functionCall?.args) throw new Error('Gemini did not return structured data')
-  return part.functionCall.args as Record<string, any>
+  const data: unknown = await res.json()
+  if (!isRecord(data) || !Array.isArray(data.candidates)) {
+    throw new Error('Gemini did not return structured data')
+  }
+  const candidate = data.candidates[0]
+  if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) {
+    throw new Error('Gemini did not return structured data')
+  }
+  const part = candidate.content.parts[0]
+  if (!isRecord(part) || !isRecord(part.functionCall)) {
+    throw new Error('Gemini did not return structured data')
+  }
+  return asJsonObject(part.functionCall.args)
 }
 
 const parseLimiter = createRateLimiter({ windowMs: 60_000, max: 10 })
@@ -144,39 +191,31 @@ function sseEvent(data: object): Uint8Array {
 }
 
 export async function POST(req: Request) {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireCapability('canCreateSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   const { limited, remaining } = parseLimiter.check(user.id)
   if (limited) {
-    return NextResponse.json(
-      { error: 'Too many requests. Please wait before trying again.' },
-      { status: 429, headers: { 'X-RateLimit-Remaining': String(remaining) } }
-    )
+    return apiError('Too many requests. Please wait before trying again.', 429, {
+      headers: { 'X-RateLimit-Remaining': String(remaining) },
+    })
   }
 
-  let body: {
-    templateId?: string
-    rawText?: string
-    provider?: 'claude' | 'gemini'
-  }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-  }
-  const { templateId, rawText, provider = 'claude' } = body as {
+  const bodyResult = await parseJsonRecordBody(req)
+  if (!bodyResult.ok) return bodyResult.response
+
+  const { templateId, rawText, provider = 'claude' } = bodyResult.data as {
     templateId?: string
     rawText?: string
     provider?: 'claude' | 'gemini'
   }
 
   if (!templateId || !rawText?.trim()) {
-    return NextResponse.json({ error: 'templateId and rawText are required' }, { status: 400 })
+    return apiError('templateId and rawText are required', 400)
   }
   if (rawText.length > MAX_TEXT_LENGTH) {
-    return NextResponse.json({ error: `Text exceeds ${MAX_TEXT_LENGTH.toLocaleString()} character limit` }, { status: 400 })
+    return apiError(`Text exceeds ${MAX_TEXT_LENGTH.toLocaleString()} character limit`, 400)
   }
 
   const { data: template, error: templateError } = await supabase
@@ -187,7 +226,7 @@ export async function POST(req: Request) {
     .single()
 
   if (templateError || !template) {
-    return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+    return apiError('Template not found', 404)
   }
 
   const sections: ManifestSection[] = template.manifest?.sections ?? []
@@ -216,13 +255,13 @@ export async function POST(req: Request) {
           : await runClaude(systemPrompt, userPrompt, tool, aiController.signal)
 
         // Deep merge: AI data wins over template defaults for non-null values
-        const merged: Record<string, any> = { ...(template.default_data ?? {}) }
+        const merged: JsonObject = { ...asJsonObject(template.default_data) }
         for (const [sectionId, sectionData] of Object.entries(aiData)) {
           if (sectionData == null) continue
           if (Array.isArray(sectionData)) {
             merged[sectionId] = sectionData
-          } else if (typeof sectionData === 'object') {
-            merged[sectionId] = deepMerge(merged[sectionId] ?? {}, sectionData)
+          } else if (isJsonObject(sectionData)) {
+            merged[sectionId] = deepMerge(asJsonObject(merged[sectionId]), sectionData)
           }
         }
 
@@ -233,7 +272,7 @@ export async function POST(req: Request) {
         for (const val of Object.values(aiData)) {
           if (val == null) continue
           if (Array.isArray(val) && val.length > 0) { populatedSections++; continue }
-          if (typeof val === 'object' && Object.values(val as Record<string, any>).some((f) => f != null)) {
+          if (isJsonObject(val) && Object.values(val).some((fieldValue) => fieldValue != null)) {
             populatedSections++
           }
         }
@@ -241,10 +280,13 @@ export async function POST(req: Request) {
           populatedSections === 0 ? 'empty' : populatedSections < 3 ? 'low' : 'ok'
 
         controller.enqueue(sseEvent({ type: 'result', sectionData: merged, _sections, provider, parseQuality }))
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          console.error(`[parse] ${provider} error:`, err)
-          try { controller.enqueue(sseEvent({ type: 'error', message: err.message || 'AI service error' })) } catch { /* closed */ }
+      } catch (err: unknown) {
+        if (!isAbortError(err)) {
+          log.event('error', 'ai.parse.provider_failed', 'AI parse provider failed', {
+            provider,
+            reason: getErrorMessage(err),
+          })
+          try { controller.enqueue(sseEvent({ type: 'error', message: getErrorMessage(err) })) } catch { /* closed */ }
         }
       } finally {
         clearInterval(heartbeat)

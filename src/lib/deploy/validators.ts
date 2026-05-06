@@ -1,4 +1,4 @@
-import type { SiteData, TemplateManifest, ValidationError } from '@/types'
+import type { FieldSchema, SectionSchema, SiteData, TemplateManifest, ValidationError } from '@/types'
 import {
   filterGateActionsForSections,
   isManifestSectionEnabled,
@@ -30,12 +30,12 @@ function walkStrings(node: unknown, path = ''): Array<[string, string]> {
 /**
  * Recursively find all fields in a manifest section schema with a given uiWidget.
  */
-function findWidgetFields(schema: any, widget: string, prefix = ''): string[] {
+function findWidgetFields(schema: FieldSchema | SectionSchema | undefined, widget: string, prefix = ''): string[] {
   if (!schema || typeof schema !== 'object') return []
   const found: string[] = []
 
   if (schema.properties) {
-    for (const [key, field] of Object.entries(schema.properties) as [string, any][]) {
+    for (const [key, field] of Object.entries(schema.properties)) {
       const fieldPath = prefix ? `${prefix}.${key}` : key
       if (field.uiWidget === widget) {
         found.push(fieldPath)
@@ -79,10 +79,11 @@ function getDownloadTargetFields(section: TemplateManifest['sections'][number]):
  * Resolve a dot-notation path into a value from an object.
  * Returns undefined if the path doesn't resolve.
  */
-function getByPath(obj: any, path: string): unknown {
-  return path.split('.').reduce((acc, key) => {
+function getByPath(obj: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, key) => {
     if (acc === undefined || acc === null) return undefined
-    return (acc as any)[key]
+    if (typeof acc !== 'object' || Array.isArray(acc)) return undefined
+    return (acc as Record<string, unknown>)[key]
   }, obj)
 }
 
@@ -111,7 +112,7 @@ export function validateDeployReady(
   }
 
   // ── 2. No blob: URLs anywhere in site data ─────────────────────────────────
-  const { _sections, _collections, ...sectionDataOnly } = siteData as any
+  const { _sections, _collections, ...sectionDataOnly } = siteData
   const allStrings = walkStrings(sectionDataOnly)
 
   for (const [path, value] of allStrings) {
@@ -146,7 +147,7 @@ export function validateDeployReady(
     const sectionEnabled = _sections?.[section.id]?.enabled ?? true
     if (!sectionEnabled) continue
 
-    const data = (siteData as any)[section.id]
+    const data = siteData[section.id]
     if (data === undefined || data === null) {
       errors.push({
         field: section.id,
@@ -181,7 +182,7 @@ export function validateDeployReady(
 
     // ── 5. collectionPicker fields must reference a non-empty collection ──────
     if (section.schema?.properties) {
-      for (const [, fieldSchema] of Object.entries(section.schema.properties) as [string, any][]) {
+      for (const [, fieldSchema] of Object.entries(section.schema.properties)) {
         if (fieldSchema.uiWidget === 'collectionPicker') {
           const collectionId = fieldSchema.collectionId
           if (collectionId && _collections) {
@@ -256,7 +257,7 @@ export function validateDeployReady(
         if (!section) continue
 
         const fileFields = getDownloadTargetFields(section)
-        const sectionData = (siteData as any)[sectionId]
+        const sectionData = siteData[sectionId]
         for (const fieldPath of fileFields) {
           const value = getByPath(sectionData, fieldPath)
           if (!isMissingAssetTarget(value)) continue

@@ -1,6 +1,8 @@
 import type { Template } from '@/types'
+import { isProjectNameCheckResult, isRecord } from '@/lib/api/contracts'
 import type { ProjectNameCheckResult, TemplateService } from './types'
-import { errorResult, getResponseError, isRecord, readJson, toServiceError } from './http'
+import { apiJsonRequest } from './api-client'
+import { errorResult } from './http'
 
 function isTemplate(value: unknown): value is Template {
   return (
@@ -16,45 +18,35 @@ function isTemplate(value: unknown): value is Template {
 
 export const templateService: TemplateService = {
   async list(options) {
-    try {
-      const response = await fetch('/api/templates', { signal: options?.signal })
-      const payload = await readJson(response)
-      if (!response.ok) {
-        return { ok: false, error: getResponseError(response, payload, 'Failed to load templates.') }
-      }
-      if (!isRecord(payload) || !Array.isArray(payload.data) || !payload.data.every(isTemplate)) {
-        return errorResult('Templates response was invalid.')
-      }
+    const result = await apiJsonRequest('/api/templates', {
+      signal: options?.signal,
+      fallback: 'Failed to load templates.',
+    })
+    if (!result.ok) return result
 
-      return { ok: true, data: payload.data }
-    } catch (error) {
-      return { ok: false, error: toServiceError(error, 'Failed to load templates.') }
+    const payload = result.data
+    if (!isRecord(payload) || !Array.isArray(payload.data) || !payload.data.every(isTemplate)) {
+      return errorResult('Templates response was invalid.')
     }
+
+    return { ok: true, data: payload.data }
   },
 
   async checkProjectName(name, options) {
-    try {
-      const response = await fetch(`/api/projects/check-name?name=${encodeURIComponent(name)}`, {
-        signal: options?.signal,
-      })
-      const payload = await readJson(response)
-      if (!response.ok) {
-        return { ok: false, error: getResponseError(response, payload, 'Failed to check project name.') }
-      }
-      if (!isRecord(payload) || typeof payload.exists !== 'boolean') {
-        return errorResult('Project name check response was invalid.')
-      }
-      if (payload.exists === false) {
-        return { ok: true, data: { exists: false } }
-      }
-      if (payload.type === 'draft' || payload.type === 'deployment') {
-        const data: ProjectNameCheckResult = { exists: true, type: payload.type }
-        return { ok: true, data }
-      }
+    const result = await apiJsonRequest(`/api/projects/check-name?name=${encodeURIComponent(name)}`, {
+      signal: options?.signal,
+      fallback: 'Failed to check project name.',
+    })
+    if (!result.ok) return result
 
+    const payload = result.data
+    if (!isProjectNameCheckResult(payload)) {
       return errorResult('Project name check response was invalid.')
-    } catch (error) {
-      return { ok: false, error: toServiceError(error, 'Failed to check project name.') }
     }
+
+    const data: ProjectNameCheckResult = payload.exists === false
+      ? { exists: false }
+      : { exists: true, type: payload.type }
+    return { ok: true, data }
   },
 }

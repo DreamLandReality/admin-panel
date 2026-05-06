@@ -1,10 +1,9 @@
-// @ts-nocheck — Deno edge function, not a Node/TypeScript project file
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
 // ── Property context builder ──────────────────────────────────────────────────
-// Mirrors src/lib/voice/extract-property-context.ts — pure data transformation,
-// no external deps. Update both files if the logic ever changes.
+// Pure data transformation kept inline for the Deno Edge Function runtime.
+// Keep this logic dependency-free if it is shared with app-side helpers later.
 
 const SKIP_SECTIONS = new Set(["seo", "navigation", "footer"])
 const SKIP_KEYS = new Set(["submissionEndpoint", "siteToken", "supabaseAnonKey"])
@@ -98,6 +97,34 @@ function resolveLeadSource(manifest: unknown, rawFormType: unknown): Record<stri
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+function getEnvVoiceSettings() {
+  return {
+    voiceAgentEnabled: Deno.env.get("VOICE_AGENT_ENABLED") === "true",
+    devModeEnabled: Deno.env.get("VOICE_AGENT_DEV_MODE") === "true",
+    source: "env_fallback",
+  }
+}
+
+async function resolveVoiceSettings(supabase: any) {
+  const { data, error } = await supabase
+    .from("voice_settings")
+    .select("voice_agent_enabled, dev_mode_enabled")
+    .eq("id", true)
+    .maybeSingle()
+
+  if (error || !data) {
+    // Env fallback keeps local/bootstrap submissions working before the singleton row exists.
+    console.warn("[submit-form] Voice settings DB lookup failed; using env fallback:", error?.message ?? "missing row")
+    return getEnvVoiceSettings()
+  }
+
+  return {
+    voiceAgentEnabled: data.voice_agent_enabled === true,
+    devModeEnabled: data.dev_mode_enabled === true,
+    source: "database",
+  }
+}
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -133,7 +160,13 @@ serve(async (req) => {
     // Combine firstName + lastName if name not provided (ContactForm sends split names)
     const name = (rawName || `${firstName || ""} ${lastName || ""}`.trim()).trim()
 
-    console.log("[submit-form] Received:", { siteToken: !!siteToken, name, email: email?.trim(), phone: phone?.trim() || null })
+    console.log("[submit-form] Received:", {
+      hasSiteToken: !!siteToken,
+      hasName: !!name,
+      hasEmail: !!email?.trim(),
+      hasPhone: !!phone?.trim(),
+      form_type,
+    })
 
     // Validate required fields
     if (!siteToken || !name || !email?.trim()) {
@@ -188,7 +221,7 @@ serve(async (req) => {
       .eq("deployment_id", deployment.id)
       .gte("created_at", oneHourAgo)
 
-    console.log("[submit-form] Rate limit check:", { ip, recentCount, deployment_id: deployment.id })
+    console.log("[submit-form] Rate limit check:", { recentCount, deployment_id: deployment.id })
     if ((recentCount ?? 0) >= 5) {
       console.log("[submit-form] Rate limited")
       return new Response(
@@ -208,9 +241,8 @@ serve(async (req) => {
       .maybeSingle()
 
     if (existingSubmission) {
-      console.log("[submit-form] Duplicate submission detected:", { 
-        deployment_id: deployment.id, 
-        email: email.trim().toLowerCase(),
+      console.log("[submit-form] Duplicate submission detected:", {
+        deployment_id: deployment.id,
         existing_id: existingSubmission.id,
         existing_created_at: existingSubmission.created_at
       })
@@ -263,12 +295,13 @@ serve(async (req) => {
       : null
 
     // ── Schedule or initiate voice call ──────────────────────────────────────
-    const voiceEnabled = Deno.env.get("VOICE_AGENT_ENABLED") === "true"
-    const devMode = Deno.env.get("VOICE_AGENT_DEV_MODE") === "true"
+    const voiceSettings = await resolveVoiceSettings(supabase)
+    const voiceEnabled = voiceSettings.voiceAgentEnabled
+    const devMode = voiceSettings.devModeEnabled
     const qstashToken = Deno.env.get("QSTASH_TOKEN")
     const adminUrl = Deno.env.get("ADMIN_PANEL_URL")
 
-    console.log("[submit-form] Voice config:", { voiceEnabled, devMode, hasQstashToken: !!qstashToken, hasAdminUrl: !!adminUrl, hasPhone: !!phone?.trim() })
+    console.log("[submit-form] Voice config:", { source: voiceSettings.source, voiceEnabled, devMode, hasQstashToken: !!qstashToken, hasAdminUrl: !!adminUrl, hasPhone: !!phone?.trim() })
 
     if (voiceEnabled && (devMode || phone?.trim())) {
       console.log("[submit-form] Voice block entered")
@@ -289,10 +322,10 @@ serve(async (req) => {
           const qstashResponse = await fetch(`https://qstash.upstash.io/v1/publish/${triggerUrl}`, {
             method: "POST",
             headers,
-            body: JSON.stringify({
-              submission_id: insertedRow.id,
-              phone: phone?.trim() || "",
-              name,
+          body: JSON.stringify({
+            submission_id: insertedRow.id,
+            phone: phone?.trim() || "",
+            name,
               deployment_slug: deployment.slug,
               property_name: deployment.project_name,
             }),
@@ -331,6 +364,11 @@ serve(async (req) => {
           })
           .eq("id", insertedRow.id)
       }
+    } else if (!voiceEnabled) {
+      await supabase
+        .from("form_submissions")
+        .update({ call_status: "skipped", call_property_context: propertyContext })
+        .eq("id", insertedRow.id)
     } else if (!devMode && !phone?.trim()) {
       await supabase
         .from("form_submissions")

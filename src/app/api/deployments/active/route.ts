@@ -1,17 +1,19 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiError, apiOk } from '@/lib/api/response'
+import { DEPLOY_TIMEOUTS } from '@/lib/constants'
+import { log } from '@/lib/log'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/deployments/active
  *
- * Returns the current user's in-progress deployment (if any) plus a
+ * Returns the current user's in-progress deployment, when present, plus a
  * staleness flag so the client can distinguish a genuinely running deploy
  * from a zombie (pipeline crashed without updating the DB).
  *
  * Also auto-recovers zombies older than 15 minutes — matching the same
- * cleanup logic on the dashboard page so any entry point into the app
+ * cleanup logic on the dashboard page so every entry point into the app
  * can unblock a stuck user.
  *
  * Response:
@@ -22,15 +24,13 @@ export const dynamic = 'force-dynamic'
  *   'building'  + updated_at > 10 min → likely stuck (CF build legitimately 5-8 min)
  */
 export async function GET() {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canManageSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   // ── Auto-recover zombie deployments (same logic as dashboard page) ──────────
-  const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
-  await supabase
+  const fifteenMinAgo = new Date(Date.now() - DEPLOY_TIMEOUTS.HARD_CANCEL_MS).toISOString()
+  const { error: recoverError } = await supabase
     .from('deployments')
     .update({
       status: 'failed' as const,
@@ -41,8 +41,14 @@ export async function GET() {
     .in('status', ['deploying', 'building'])
     .lt('updated_at', fifteenMinAgo)
 
-  // ── Query for any remaining active deployment ─────────────────────────────
-  const { data: deployment } = await supabase
+  if (recoverError) {
+    log.event('warn', 'deployment.active.zombie_recover_failed', recoverError.message, {
+      userId: user.id,
+    })
+  }
+
+  // ── Query for a remaining active deployment ───────────────────────────────
+  const { data: deployment, error: deploymentError } = await supabase
     .from('deployments')
     .select('id, project_name, status, updated_at, github_repo')
     .eq('deployed_by', user.id)
@@ -51,19 +57,21 @@ export async function GET() {
     .limit(1)
     .maybeSingle()
 
+  if (deploymentError) {
+    return apiError(deploymentError.message, 500)
+  }
+
   if (!deployment) {
-    return NextResponse.json({ deployment: null, isLikelyStuck: false })
+    return apiOk({ deployment: null, isLikelyStuck: false })
   }
 
   // ── Compute staleness ─────────────────────────────────────────────────────
   const updatedAt = new Date(deployment.updated_at).getTime()
   const ageMs = Date.now() - updatedAt
-  const fiveMin = 5 * 60 * 1000
-  const tenMin = 10 * 60 * 1000
 
   const isLikelyStuck =
-    (deployment.status === 'deploying' && ageMs > fiveMin) ||
-    (deployment.status === 'building' && ageMs > tenMin)
+    (deployment.status === 'deploying' && ageMs > DEPLOY_TIMEOUTS.DEPLOYING_STALE_MS) ||
+    (deployment.status === 'building' && ageMs > DEPLOY_TIMEOUTS.BUILDING_STALE_MS)
 
-  return NextResponse.json({ deployment, isLikelyStuck })
+  return apiOk({ deployment, isLikelyStuck })
 }

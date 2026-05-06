@@ -1,12 +1,9 @@
 import { findAiSkipSections } from '@/lib/constants'
+import { isRecord } from '@/lib/api/contracts'
 import type { ManifestSection } from '@/types'
 import { PARSE_EXTRACTION_RULES } from '../_shared/extraction-rules'
 import { REAL_ESTATE_SEO_RULES } from '../_shared/seo-rules'
 import { LUXURY_REAL_ESTATE_WRITING_RULES } from '../_shared/writing-rules'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function collectAiHints(sections: ManifestSection[]): string {
   const skipSections = findAiSkipSections(sections)

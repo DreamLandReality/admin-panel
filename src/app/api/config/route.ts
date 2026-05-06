@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/api/auth'
+import { apiData, tooManyRequests } from '@/lib/api/response'
 import { createRateLimiter } from '@/lib/rate-limit'
 
 const configLimiter = createRateLimiter({ windowMs: 60_000, max: 60 })
@@ -10,23 +10,13 @@ const configLimiter = createRateLimiter({ windowMs: 60_000, max: 60 })
  * Requires authentication — never exposes secrets, only boolean flags.
  */
 export async function GET() {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const { user } = auth
 
   const { limited, resetMs } = configLimiter.check(user.id)
   if (limited) {
-    return NextResponse.json(
-      { error: 'Too many requests' },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(Math.ceil(resetMs / 1000)),
-          'X-RateLimit-Limit': String(configLimiter.limit),
-          'X-RateLimit-Remaining': '0',
-        },
-      }
-    )
+    return tooManyRequests('Too many requests', resetMs, configLimiter.limit)
   }
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY ?? ''
@@ -34,30 +24,8 @@ export async function GET() {
   const isRealAnthropicKey = anthropicKey.startsWith('sk-ant-') && anthropicKey.length > 50
   const isRealGoogleKey = googleKey.startsWith('AIza') && googleKey.length > 30
 
-  const isVoiceBaseConfigured = !!(
-    process.env.ELEVENLABS_API_KEY &&
-    process.env.ELEVENLABS_AGENT_ID &&
-    process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID &&
-    process.env.ELEVENLABS_WEBHOOK_SECRET &&
-    process.env.QSTASH_TOKEN &&
-    process.env.QSTASH_CURRENT_SIGNING_KEY &&
-    process.env.QSTASH_NEXT_SIGNING_KEY &&
-    process.env.ADMIN_PANEL_URL &&
-    process.env.VOICE_AGENT_ENABLED === 'true'
-  )
-  const isVoiceAgentConfigured = process.env.VOICE_AGENT_DEV_MODE === 'true'
-    ? isVoiceBaseConfigured && !!process.env.ELEVENLABS_DEV_TO_NUMBER
-    : isVoiceBaseConfigured
-
-  return NextResponse.json({
-    isAiConfigured: !!(isRealAnthropicKey && process.env.ANTHROPIC_PARSE_MODEL),
-    isGeminiConfigured: !!(isRealGoogleKey && process.env.GEMINI_PARSE_MODEL),
-    isDeployConfigured: !!(
-      process.env.GITHUB_TOKEN &&
-      process.env.GITHUB_ORG &&
-      process.env.CLOUDFLARE_API_TOKEN &&
-      process.env.CLOUDFLARE_ACCOUNT_ID
-    ),
-    isVoiceAgentConfigured,
+  return apiData({
+    isAiConfigured: isRealAnthropicKey,
+    isGeminiConfigured: isRealGoogleKey,
   })
 }

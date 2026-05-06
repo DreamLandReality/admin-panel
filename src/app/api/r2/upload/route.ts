@@ -10,12 +10,18 @@
  * are immediately accessible via the public URL.
  */
 
-import { type NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import { uploadToR2, getAssetsBucketName } from '@/lib/utils/r2-storage'
-import { createClient } from '@/lib/supabase/server'
+import { apiError, apiOk } from '@/lib/api/response'
+import { requireCapability } from '@/lib/api/auth'
 import { createRateLimiter } from '@/lib/rate-limit'
+import { log } from '@/lib/log'
 
 const uploadLimiter = createRateLimiter({ windowMs: 60_000, max: 20 })
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Internal server error'
+}
 
 /**
  * In-process concurrency guard — prevents memory spikes from many parallel large uploads.
@@ -60,7 +66,7 @@ const ALLOWED_TYPES = new Set([
 // Per-type file size limits
 function getMaxFileSize(mimeType: string): number {
   if (mimeType.startsWith('video/')) return 200 * 1024 * 1024  // 200 MB
-  if (mimeType === 'application/pdf')  return 25 * 1024 * 1024  //  25 MB
+  if (mimeType === 'application/pdf')  return 30 * 1024 * 1024  //  30 MB
   return 10 * 1024 * 1024                                        //  10 MB (images)
 }
 
@@ -69,36 +75,26 @@ const ALLOWED_PREFIXES = ['sites/', 'templates/']
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authenticated user
-    const supabase = createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireCapability('canEditSites')
+    if (!auth.ok) return auth.response
+    const { user } = auth
 
     const { limited, remaining, resetMs } = uploadLimiter.check(user.id)
     if (limited) {
-      return NextResponse.json(
-        { error: 'Too many upload requests' },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(Math.ceil(resetMs / 1000)),
-            'X-RateLimit-Limit': String(uploadLimiter.limit),
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': String(Math.ceil((Date.now() + resetMs) / 1000)),
-          },
-        }
-      )
+      return apiError('Too many upload requests', 429, {
+        headers: {
+          'Retry-After': String(Math.ceil(resetMs / 1000)),
+          'X-RateLimit-Limit': String(uploadLimiter.limit),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.ceil((Date.now() + resetMs) / 1000)),
+        },
+      })
     }
     void remaining // consumed above for headers; suppress lint warning
 
     // Check assets bucket is configured
     if (!getAssetsBucketName()) {
-      return NextResponse.json(
-        { error: 'R2 assets bucket not configured. Set CLOUDFLARE_R2_ASSETS_BUCKET_NAME.' },
-        { status: 500 }
-      )
+      return apiError('R2 assets bucket not configured. Set CLOUDFLARE_R2_ASSETS_BUCKET_NAME.', 500)
     }
 
     // Parse multipart form data
@@ -107,58 +103,39 @@ export async function POST(request: NextRequest) {
     const objectKey = formData.get('objectKey') as string | null
 
     if (!file || !objectKey) {
-      return NextResponse.json(
-        { error: 'file and objectKey are required' },
-        { status: 400 }
-      )
+      return apiError('file and objectKey are required', 400)
     }
 
     // Validate file type
     if (!ALLOWED_TYPES.has(file.type)) {
-      return NextResponse.json(
-        { error: `Unsupported file type: ${file.type}. Allowed: ${Array.from(ALLOWED_TYPES).join(', ')}` },
-        { status: 400 }
-      )
+      return apiError(`Unsupported file type: ${file.type}. Allowed: ${Array.from(ALLOWED_TYPES).join(', ')}`, 400)
     }
 
     // Validate file size (limit varies by type)
     const maxFileSize = getMaxFileSize(file.type)
     if (file.size > maxFileSize) {
-      return NextResponse.json(
-        { error: `File too large. Maximum: ${maxFileSize / 1024 / 1024} MB` },
-        { status: 400 }
-      )
+      return apiError(`File too large. Maximum: ${maxFileSize / 1024 / 1024} MB`, 400)
     }
 
     // Validate object key
     if (objectKey.includes('..') || objectKey.startsWith('/')) {
-      return NextResponse.json(
-        { error: 'Invalid objectKey: path traversal not allowed' },
-        { status: 400 }
-      )
+      return apiError('Invalid objectKey: path traversal not allowed', 400)
     }
 
     if (!ALLOWED_PREFIXES.some(prefix => objectKey.startsWith(prefix))) {
-      return NextResponse.json(
-        { error: `Invalid objectKey: must start with ${ALLOWED_PREFIXES.join(' or ')}` },
-        { status: 400 }
-      )
+      return apiError(`Invalid objectKey: must start with ${ALLOWED_PREFIXES.join(' or ')}`, 400)
     }
 
     // Validate objectKey has meaningful length (prefix + at least a filename)
     if (objectKey.length < 10) {
-      return NextResponse.json(
-        { error: 'Invalid objectKey: too short' },
-        { status: 400 }
-      )
+      return apiError('Invalid objectKey: too short', 400)
     }
 
     // Concurrent upload limit
     if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
-      return NextResponse.json(
-        { error: 'Too many concurrent uploads. Please try again in a moment.' },
-        { status: 429, headers: { 'Retry-After': '5' } }
-      )
+      return apiError('Too many concurrent uploads. Please try again in a moment.', 429, {
+        headers: { 'Retry-After': '5' },
+      })
     }
 
     // Read file into buffer, validate magic bytes, then upload to R2
@@ -168,16 +145,13 @@ export async function POST(request: NextRequest) {
       const bytes = new Uint8Array(arrayBuffer)
 
       if (!hasMagicBytes(bytes, file.type)) {
-        return NextResponse.json(
-          { error: 'Invalid file content: file header does not match declared type' },
-          { status: 400 }
-        )
+        return apiError('Invalid file content: file header does not match declared type', 400)
       }
 
       const buffer = Buffer.from(arrayBuffer)
       const publicUrl = await uploadToR2(objectKey, buffer, file.type)
 
-      return NextResponse.json({
+      return apiOk({
         url: publicUrl,
         key: objectKey
       })
@@ -185,11 +159,10 @@ export async function POST(request: NextRequest) {
       activeUploads--
     }
   } catch (error) {
-    console.error('Error uploading to R2:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
+    const errorMessage = getErrorMessage(error)
+    log.event('error', 'r2.upload.failed', 'Failed to upload object to R2', {
+      reason: errorMessage,
+    })
+    return apiError(errorMessage, 500)
   }
 }

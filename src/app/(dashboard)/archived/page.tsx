@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { requirePageCapability } from '@/lib/auth/page-guards'
 import type { DeploymentCardData } from '@/types'
 import { generateSignedUrl } from '@/lib/utils/r2-storage'
+import { log } from '@/lib/log'
 import { ArchivedCard } from '@/components/dashboard/archived-card'
 import { CardGrid } from '@/components/layout/CardGrid'
 import { EmptyState } from '@/components/dashboard/empty-state'
@@ -9,10 +9,7 @@ import { EmptyState } from '@/components/dashboard/empty-state'
 export const dynamic = 'force-dynamic'
 
 export default async function ArchivedPage() {
-  const supabase = createClient()
-
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) redirect('/login')
+  const { supabase, user } = await requirePageCapability('canManageSites')
 
   const { data, error } = await supabase
     .from('deployments')
@@ -21,7 +18,7 @@ export default async function ArchivedPage() {
     .eq('status', 'archived')
     .order('updated_at', { ascending: false })
 
-  if (error) console.error('Failed to fetch archived deployments:', error)
+  if (error) log.error('Failed to fetch archived deployments:', error)
 
   const raw = (data ?? []) as unknown as DeploymentCardData[]
   const deployments = await Promise.all(

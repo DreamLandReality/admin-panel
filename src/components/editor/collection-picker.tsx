@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { ArrowDownIcon, ArrowUpIcon, XIcon } from '@/components/icons'
 
 // ─── CollectionPickerWidget ───────────────────────────────────────────────────
 
@@ -63,9 +64,7 @@ export function CollectionPickerWidget({
                 className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
                 title="Move up"
               >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                  <path d="M2 6.5L5 3.5l3 3" />
-                </svg>
+                <ArrowUpIcon width={10} height={10} strokeWidth={1.4} />
               </button>
               <button
                 onClick={() => handleMoveDown(i)}
@@ -73,18 +72,14 @@ export function CollectionPickerWidget({
                 className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
                 title="Move down"
               >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                  <path d="M2 3.5L5 6.5l3-3" />
-                </svg>
+                <ArrowDownIcon width={10} height={10} strokeWidth={1.4} />
               </button>
               <button
                 onClick={() => handleRemove(id)}
-                className="text-muted-foreground hover:text-red-400 p-0.5"
+                className="text-muted-foreground hover:text-error p-0.5"
                 title="Remove"
               >
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                  <path d="M3 3l6 6M9 3l-6 6" />
-                </svg>
+                <XIcon width={10} height={10} strokeWidth={1.4} />
               </button>
             </div>
           </div>

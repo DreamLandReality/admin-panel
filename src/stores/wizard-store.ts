@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Deployment, DeploymentStatus, Draft, SectionRegistry, Template } from '@/types'
+import { log } from '@/lib/log'
 import { buildFieldMaps } from '@/lib/utils/build-field-maps'
 import { getManifestDefaultPageId, seedSectionDataFromManifest } from '@/lib/utils/manifest-contract'
 import { useDeployStore } from './deploy-store'
@@ -12,7 +13,7 @@ import {
   seedMissingSectionData,
   seedSectionsRegistry,
 } from './store-helpers'
-import type { WizardStep } from './store-types'
+import type { EditorStore, WizardStep } from './store-types'
 
 interface WizardStore {
   currentStep: WizardStep
@@ -57,7 +58,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
 
   setStep: (step) => set((state) => {
     if (step < 1 || step > 4) {
-      console.warn(`[wizard] Invalid step: ${step}`)
+      log.warn(`[wizard] Invalid step: ${step}`)
       return state
     }
     if (step === 1) {
@@ -105,14 +106,14 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
 
   loadFromDeployment: (deployment, template) => {
     useEditorStore.getState().revokeCurrentBlobs()
-    const { _sections, ...sectionData } = (deployment.site_data ?? {}) as Record<string, any>
+    const { _sections, _collections, ...sectionData } = (deployment.site_data ?? {}) as Record<string, any>
     const sectionsRegistry = (_sections ?? {}) as Record<string, SectionRegistry>
     const manifest = template.manifest ?? deployment.template_manifest
     setFieldMaps(manifest)
     useEditorStore.getState().setEditorState({
       sectionData: seedSectionDataFromManifest(sectionData, manifest),
       sectionsRegistry: seedSectionsRegistry(sectionsRegistry, manifest),
-      collectionData: buildCollectionData(manifest),
+      collectionData: (_collections ?? buildCollectionData(manifest)) as EditorStore['collectionData'],
       blobUrls: {},
       dataUrls: {},
       pendingImages: {},
@@ -136,7 +137,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     const manifest = template.manifest
     setFieldMaps(manifest)
     useEditorStore.getState().setEditorState({
-      sectionData: seedSectionDataFromManifest(draft.section_data ?? {}, manifest),
+      sectionData: seedSectionDataFromManifest(draft.section_data ?? {}, manifest) as unknown as EditorStore['sectionData'],
       sectionsRegistry: seedSectionsRegistry(draft.sections_registry ?? {}, manifest),
       collectionData: draft.collection_data ?? {},
       blobUrls: {},

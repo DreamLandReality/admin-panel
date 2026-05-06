@@ -8,6 +8,7 @@
  */
 
 import type { TemplateManifest, FieldSchema, FieldConstraints } from '@/types'
+import { log } from '@/lib/log'
 
 export interface FieldMaps {
   editabilityMap: Record<string, Record<string, boolean>>
@@ -128,7 +129,7 @@ export function applyConstraints(
 
     // Pattern validation (optional - could log warning but still accept)
     if (constraints.pattern && !new RegExp(constraints.pattern).test(result)) {
-      console.warn(`[constraints] Value "${result}" does not match pattern ${constraints.pattern}`)
+      log.warn(`[constraints] Value "${result}" does not match pattern ${constraints.pattern}`)
     }
 
     return result

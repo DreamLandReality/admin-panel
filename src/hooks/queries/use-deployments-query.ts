@@ -5,11 +5,9 @@ import { deploymentService } from '@/services/deployment'
 import { queryKeys } from './keys'
 import { unwrapResult } from './utils'
 
-export function useActiveDeploymentsQuery() {
-  return useQuery({
-    queryKey: queryKeys.deployments.active,
-    queryFn: ({ signal }) => unwrapResult(deploymentService.listActive({ signal })),
-  })
+type UseDeploymentQueryOptions = {
+  enabled?: boolean
+  refetchInterval?: number | false
 }
 
 export function useActiveDeploymentGateQuery() {
@@ -19,10 +17,11 @@ export function useActiveDeploymentGateQuery() {
   })
 }
 
-export function useDeploymentQuery(id: string | null) {
+export function useDeploymentQuery(id: string | null, options: UseDeploymentQueryOptions = {}) {
   return useQuery({
     queryKey: id ? queryKeys.deployments.detail(id) : ['deployments', 'empty'],
     queryFn: ({ signal }) => unwrapResult(deploymentService.get(id ?? '', { signal })),
-    enabled: !!id,
+    enabled: !!id && (options.enabled ?? true),
+    refetchInterval: options.refetchInterval,
   })
 }

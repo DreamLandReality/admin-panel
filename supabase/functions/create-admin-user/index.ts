@@ -1,7 +1,25 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
-console.log("Create Admin User function started")
+type StaffRole = "admin" | "sales"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function isStaffRole(value: unknown): value is StaffRole {
+  return value === "admin" || value === "sales"
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unexpected error"
+}
+
+console.log("Create staff user function started")
 
 serve(async (req) => {
   try {
@@ -14,10 +32,30 @@ serve(async (req) => {
       })
     }
 
-    const { email, password, display_name, phone_number } = await req.json()
+    const payload: unknown = await req.json()
+
+    if (!isRecord(payload)) {
+      return new Response(JSON.stringify({ error: "Invalid request body" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      })
+    }
+
+    const email = getString(payload.email)
+    const password = getString(payload.password)
+    const displayName = getString(payload.display_name)
+    const phoneNumber = getString(payload.phone_number)
+    const role = payload.role
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: "Email and password are required" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      })
+    }
+
+    if (!isStaffRole(role)) {
+      return new Response(JSON.stringify({ error: "Role must be admin or sales" }), {
         headers: { "Content-Type": "application/json" },
         status: 400,
       })
@@ -37,12 +75,13 @@ serve(async (req) => {
     const { data: { user }, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      phone: phone_number || undefined,
+      phone: phoneNumber || undefined,
       email_confirm: true,
-      app_metadata: { user_role: "admin" },
+      // Authorization reads app_metadata because user_metadata is editable by users.
+      app_metadata: { user_role: role },
       user_metadata: {
-        full_name: display_name || "",
-        phone_number: phone_number || "",
+        full_name: displayName || "",
+        phone_number: phoneNumber || "",
       },
     })
 
@@ -52,7 +91,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        message: `Successfully created admin user: ${email}`,
+        message: `Successfully created ${role} user: ${email}`,
         user,
       }),
       {
@@ -60,8 +99,8 @@ serve(async (req) => {
         status: 200,
       }
     )
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+  } catch (err: unknown) {
+    return new Response(JSON.stringify({ error: getErrorMessage(err) }), {
       headers: { "Content-Type": "application/json" },
       status: 500,
     })

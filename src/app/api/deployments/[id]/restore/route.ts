@@ -1,5 +1,6 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { type NextRequest } from 'next/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiError, apiOk } from '@/lib/api/response'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { env } from '@/lib/env'
 
@@ -12,26 +13,28 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canManageSites')
+  if (!auth.ok) return auth.response
+  const { user } = auth
 
   const svc = createServiceClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
-  const { data: deployment } = await svc
+  const { data: deployment, error: fetchError } = await svc
     .from('deployments')
     .select('id, status, deployed_by')
     .eq('id', params.id)
     .single()
 
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    return apiError(fetchError.message, 500)
+  }
+
   if (!deployment || deployment.deployed_by !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return apiError('Not found', 404)
   }
 
   if (deployment.status !== 'archived') {
-    return NextResponse.json({ error: 'Only archived deployments can be restored' }, { status: 400 })
+    return apiError('Only archived deployments can be restored', 400)
   }
 
   // Clear dead infrastructure — pipeline will recreate from scratch using existing site_data
@@ -49,10 +52,11 @@ export async function POST(
       updated_at: new Date().toISOString(),
     })
     .eq('id', params.id)
+    .eq('deployed_by', user.id)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiError(error.message, 500)
   }
 
-  return NextResponse.json({ deploymentId: params.id })
+  return apiOk({ deploymentId: params.id })
 }

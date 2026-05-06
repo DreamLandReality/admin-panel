@@ -1,7 +1,9 @@
-import { type NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
+import { apiError, apiOk } from '@/lib/api/response'
 import { env } from '@/lib/env'
+import { log } from '@/lib/log'
 
 const WEBHOOK_TOLERANCE_SECONDS = 30 * 60
 
@@ -14,6 +16,12 @@ type WebhookData = {
   }
   status?: unknown
   transcript?: unknown
+}
+
+type SubmissionFollowUpState = {
+  id: string
+  attended_by: string | null
+  call_notes: string | null
 }
 
 function timingSafeEqualHex(a: string, b: string): boolean {
@@ -60,14 +68,16 @@ export async function POST(req: NextRequest) {
   // 1. Verify ElevenLabs webhook signature (required)
   const signature = req.headers.get('elevenlabs-signature')
   if (!verifyElevenLabsSignature(body, signature)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    log.event('warn', 'voice.webhook.invalid_signature', 'Rejected ElevenLabs webhook with invalid signature')
+    return apiError('Invalid signature', 401)
   }
 
   let payload: Record<string, unknown>
   try {
     payload = JSON.parse(body)
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    log.event('warn', 'voice.webhook.invalid_json', 'Rejected ElevenLabs webhook with invalid JSON')
+    return apiError('Invalid JSON', 400)
   }
   // ElevenLabs post_call_transcription wraps everything under `data`
   const data = (
@@ -78,19 +88,33 @@ export async function POST(req: NextRequest) {
   const conversationId = typeof data.conversation_id === 'string' ? data.conversation_id : ''
 
   if (!conversationId) {
-    return NextResponse.json({ error: 'Missing conversation_id' }, { status: 400 })
+    log.event('warn', 'voice.webhook.missing_conversation_id', 'Rejected ElevenLabs webhook without conversation_id')
+    return apiError('Missing conversation_id', 400)
   }
 
   // 2. Find submission by conversation ID
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
-  const { data: submission } = await supabase
+  const { data: submission, error: submissionError } = await supabase
     .from('form_submissions')
-    .select('id')
+    .select('id, attended_by, call_notes')
     .eq('elevenlabs_conversation_id', conversationId)
     .single()
+  const followUpState = submission as SubmissionFollowUpState | null
 
-  if (!submission) {
-    return NextResponse.json({ error: 'Submission not found' }, { status: 404 })
+  if (submissionError) {
+    log.event('warn', 'voice.webhook.submission_lookup_failed', submissionError.message, {
+      conversationId,
+    })
+    if (submissionError.code !== 'PGRST116') {
+      return apiError(submissionError.message, 500)
+    }
+  }
+
+  if (!followUpState) {
+    log.event('warn', 'voice.webhook.submission_not_found', 'No submission matched ElevenLabs conversation_id', {
+      conversationId,
+    })
+    return apiError('Submission not found', 404)
   }
 
   // 3. Determine call outcome
@@ -114,25 +138,41 @@ export async function POST(req: NextRequest) {
     .map((m) => `${m.role === 'agent' ? 'Agent' : 'User'}: ${m.message}`)
     .join('\n')
 
-  // 5. Store only what the admin panel needs — summary + outcome
+  // 5. Store only what the admin panel needs for follow-up.
   const summary = typeof data.analysis?.transcript_summary === 'string'
     ? data.analysis.transcript_summary
     : ''
-  const callInsights: Record<string, string> = {}
-  if (summary) callInsights.summary = summary
-  if (callSuccessful) callInsights.outcome = callSuccessful === 'success' ? 'Successful' : 'Unsuccessful'
 
   // 6. Update form_submission with results
-  await supabase
-    .from('form_submissions')
-    .update({
-      call_status: callStatus,
-      call_completed_at: new Date().toISOString(),
-      call_transcript: transcript || null,
-      call_collected_data: Object.keys(callInsights).length ? callInsights : null,
-      call_duration_seconds: durationSecs,
-    })
-    .eq('id', submission.id)
+  const completedAt = new Date().toISOString()
+  const update: Record<string, unknown> = {
+    call_status: callStatus,
+    call_completed_at: completedAt,
+    call_transcript_raw: payload,
+    call_transcript_text: transcript || null,
+  }
 
-  return NextResponse.json({ status: 'ok' })
+  if (callStatus === 'completed' && followUpState.attended_by !== 'manual') {
+    update.attended_by = 'automated'
+    update.attended_user_id = null
+    update.attended_at = completedAt
+    update.lead_status = 'attended'
+    update.call_notes = summary || followUpState.call_notes || null
+  }
+
+  const { error: updateError } = await supabase
+    .from('form_submissions')
+    .update(update)
+    .eq('id', followUpState.id)
+
+  if (updateError) {
+    log.event('error', 'voice.webhook.update_failed', 'Failed to persist ElevenLabs webhook result', {
+      submissionId: followUpState.id,
+      conversationId,
+      reason: updateError.message,
+    })
+    return apiError(updateError.message, 500)
+  }
+
+  return apiOk({ status: 'ok' })
 }

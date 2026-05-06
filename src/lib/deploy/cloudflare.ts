@@ -1,4 +1,33 @@
 import { env } from '@/lib/env'
+import { log } from '@/lib/log'
+
+interface CloudflareError {
+  code?: string | number
+  message?: string
+}
+
+interface CloudflareEnvelope<T> {
+  success: boolean
+  errors?: CloudflareError[]
+  result?: T
+}
+
+interface CloudflarePagesProject {
+  id?: string
+  subdomain?: string
+}
+
+interface CloudflareDeploymentStage {
+  name: string
+  status: DeploymentStage['status'] | 'running' | string
+}
+
+interface CloudflareDeployment {
+  id?: string
+  url?: string
+  latest_stage?: CloudflareDeploymentStage
+  stages?: CloudflareDeploymentStage[]
+}
 
 function cfBase() {
   return `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}`
@@ -11,24 +40,28 @@ function cfHeaders() {
   }
 }
 
-async function cfFetch(path: string, init?: RequestInit) {
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : ''
+}
+
+async function cfFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${cfBase()}${path}`
-  console.log(`[Cloudflare] ${init?.method ?? 'GET'} ${path}`)
+  log.info(`[Cloudflare] ${init?.method ?? 'GET'} ${path}`)
 
   const res = await fetch(url, {
     ...init,
     headers: { ...cfHeaders(), ...(init?.headers ?? {}) },
   })
-  const json = (await res.json()) as { success: boolean; errors?: any[]; result?: any }
+  const json = (await res.json()) as CloudflareEnvelope<T>
 
   if (!json.success) {
     const errors = json.errors ?? []
     // Log full error details so we can see the code + message
-    console.error(`[Cloudflare] API failure on ${init?.method ?? 'GET'} ${path}`)
-    console.error(`[Cloudflare] HTTP status: ${res.status}`)
-    console.error(`[Cloudflare] Errors:`, JSON.stringify(errors, null, 2))
+    log.error(`[Cloudflare] API failure on ${init?.method ?? 'GET'} ${path}`)
+    log.error(`[Cloudflare] HTTP status: ${res.status}`)
+    log.error(`[Cloudflare] Errors:`, JSON.stringify(errors, null, 2))
     if (init?.body) {
-      console.error(`[Cloudflare] Request body:`, init.body)
+      log.error(`[Cloudflare] Request body:`, init.body)
     }
     // Include error code in the thrown message so it surfaces in the UI
     const first = errors[0]
@@ -38,7 +71,7 @@ async function cfFetch(path: string, init?: RequestInit) {
       : `Cloudflare API error ${res.status} on ${path}`
     throw new Error(msg)
   }
-  return json.result
+  return json.result as T
 }
 
 /** Check if a Cloudflare Pages project already exists. */
@@ -46,14 +79,14 @@ export async function getProject(
   projectName: string
 ): Promise<{ exists: boolean; projectId?: string; projectUrl?: string }> {
   try {
-    const result = await cfFetch(`/pages/projects/${projectName}`)
+    const result = await cfFetch<CloudflarePagesProject>(`/pages/projects/${projectName}`)
     return {
       exists: true,
       projectId: result?.id,
       projectUrl: result?.subdomain ? `https://${result.subdomain}` : undefined,
     }
-  } catch (err: any) {
-    const msg: string = err?.message ?? ''
+  } catch (err: unknown) {
+    const msg = getErrorMessage(err)
     if (msg.toLowerCase().includes('not found') || msg.includes('10006')) {
       return { exists: false }
     }
@@ -72,7 +105,7 @@ export async function createPagesProject(
   const headers = cfHeaders()
 
   // Step 1: Create project
-  console.log(`[Cloudflare] Creating Pages project: ${projectName}`)
+  log.info(`[Cloudflare] Creating Pages project: ${projectName}`)
   const createRes = await fetch(`${base}/pages/projects`, {
     method: 'POST',
     headers,
@@ -96,7 +129,7 @@ export async function createPagesProject(
 
   if (!createRes.ok) {
     const body = await createRes.json().catch(() => ({ errors: [] }))
-    console.error('[Cloudflare] Project creation failed:', JSON.stringify(body, null, 2))
+    log.error('[Cloudflare] Project creation failed:', JSON.stringify(body, null, 2))
     const msg = body?.errors?.[0]?.message ?? `Cloudflare API error ${createRes.status}`
     throw new Error(msg)
   }
@@ -118,7 +151,7 @@ export async function createPagesProject(
   })
   if (!envRes.ok) {
     const err = await envRes.json().catch(() => ({ errors: [] }))
-    console.warn(`[Cloudflare] Failed to set SITE_URL (non-fatal): ${err?.errors?.[0]?.message ?? envRes.status}`)
+    log.warn(`[Cloudflare] Failed to set SITE_URL (non-fatal): ${err?.errors?.[0]?.message ?? envRes.status}`)
   }
 
   return { projectId, projectUrl: cfSubdomain ? `https://${cfSubdomain}` : `https://${projectName}.pages.dev` }
@@ -148,10 +181,10 @@ export async function updateProjectEnvVars(
 
 /** Manually trigger a deployment (used for republish). */
 export async function triggerDeployment(projectName: string): Promise<{ deploymentId: string }> {
-  const result = await cfFetch(`/pages/projects/${projectName}/deployments`, {
+  const result = await cfFetch<CloudflareDeployment>(`/pages/projects/${projectName}/deployments`, {
     method: 'POST',
   })
-  return { deploymentId: result?.id }
+  return { deploymentId: result.id ?? '' }
 }
 
 /** Delete a Cloudflare Pages project. Site goes offline immediately. */
@@ -184,9 +217,9 @@ export async function waitForDeployment(
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 10_000))
 
-    let deployments: any[]
+    let deployments: CloudflareDeployment[]
     try {
-      deployments = await cfFetch(`/pages/projects/${projectName}/deployments`)
+      deployments = await cfFetch<CloudflareDeployment[]>(`/pages/projects/${projectName}/deployments`)
     } catch {
       // Transient network error — keep polling
       continue
@@ -198,22 +231,22 @@ export async function waitForDeployment(
     // If triggeredDeploymentId is provided, only match that specific deployment to avoid
     // returning a stale previously-succeeded build (P0: redeploy stale match bug).
     const succeeded = deployments.find(
-      (d: any) => d?.latest_stage?.name === 'deploy' && d?.latest_stage?.status === 'success'
-        && (!triggeredDeploymentId || d.id === triggeredDeploymentId)
+      (deployment) => deployment.latest_stage?.name === 'deploy' && deployment.latest_stage?.status === 'success'
+        && (!triggeredDeploymentId || deployment.id === triggeredDeploymentId)
     )
     if (succeeded) {
       onProgress?.('deploy', 'success')
       // Return the deployment-specific hash URL (e.g. abc123.projectName.pages.dev)
       // so Puppeteer can screenshot the exact build that was just completed.
-      const url = succeeded.url
+      const url = succeeded.url ?? ''
       return { success: true, url }
     }
 
     // Report progress from the most active (non-idle) deployment
     const active = deployments.find(
-      (d: any) => d?.latest_stage?.status === 'active' || d?.latest_stage?.status === 'running'
+      (deployment) => deployment.latest_stage?.status === 'active' || deployment.latest_stage?.status === 'running'
     ) ?? deployments[0]
-    const stage: DeploymentStage | undefined = active?.latest_stage
+    const stage = active?.latest_stage
     if (!stage) continue
 
     const currentStage = `${stage.name}:${stage.status}`
@@ -224,12 +257,12 @@ export async function waitForDeployment(
 
     // Only treat as failed if ALL deployments have failed/canceled
     const allDone = deployments.every(
-      (d: any) => d?.latest_stage?.status === 'failure' || d?.latest_stage?.status === 'canceled'
+      (deployment) => deployment.latest_stage?.status === 'failure' || deployment.latest_stage?.status === 'canceled'
     )
     if (allDone) {
       const failed = deployments[0]
       const logs = failed?.stages
-        ?.map((s: any) => `[${s.name}] ${s.status}`)
+        ?.map((stage) => `[${stage.name}] ${stage.status}`)
         .join('\n')
       return { success: false, url: '', logs }
     }

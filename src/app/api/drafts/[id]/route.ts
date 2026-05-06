@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiData, apiError, apiOk } from '@/lib/api/response'
 
 /**
  * GET /api/drafts/:id — Fetch a single draft (for resume flow)
@@ -8,23 +8,22 @@ export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
 ) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   const { data, error } = await supabase
     .from('drafts')
     .select('*')
     .eq('id', params.id)
+    .eq('user_id', user.id)
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 404 })
+    return apiError(error.message, 404)
   }
 
-  return NextResponse.json({ data })
+  return apiData(data)
 }
 
 /**
@@ -34,20 +33,19 @@ export async function DELETE(
   _request: Request,
   { params }: { params: { id: string } }
 ) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   const { error } = await supabase
     .from('drafts')
     .delete()
     .eq('id', params.id)
+    .eq('user_id', user.id)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiError(error.message, 500)
   }
 
-  return NextResponse.json({ success: true })
+  return apiOk({ success: true })
 }

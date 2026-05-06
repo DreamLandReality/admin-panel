@@ -1,3 +1,5 @@
+import type { AttendedBy, CallStatus, LeadStatus } from '@/lib/api/contracts'
+
 // ─── Status & Category Enums ─────────────────────────────────────────────────
 
 export type DeploymentStatus =
@@ -14,6 +16,15 @@ export type TemplateCategory =
   | 'investment'
   | 'villa'
   | 'affordable'
+
+// ─── JSON Helper Types ──────────────────────────────────────────────────────
+
+export type JsonPrimitive = string | number | boolean | null
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray
+export interface JsonObject {
+  [key: string]: JsonValue
+}
+export type JsonArray = JsonValue[]
 
 // ─── Template Manifest Types ─────────────────────────────────────────────────
 
@@ -45,40 +56,14 @@ export interface ManifestLeadSource {
   gateId?: string
 }
 
-export type ManifestStateType =
-  | {
-      type: 'enum'
-      values: string[]
-      default: string
-      persist: boolean
-      description?: string
-    }
-  | {
-      type: 'boolean'
-      default: boolean
-      persist: boolean
-      description?: string
-    }
-  | {
-      type: 'number'
-      default: number
-      persist: boolean
-      description?: string
-      validation?: { min?: number; max?: number }
-    }
-  | {
-      type: 'string'
-      default: string
-      persist: boolean
-      description?: string
-      validation?: { pattern?: string }
-    }
-  | {
-      type: 'object'
-      default: Record<string, unknown>
-      persist: boolean
-      description?: string
-    }
+export type ManifestStateType = {
+  type: 'enum' | 'boolean' | 'number' | 'string' | 'object' | string
+  values?: (string | number | boolean)[]
+  default?: unknown
+  persist: boolean
+  description?: string
+  validation?: { min?: number; max?: number; pattern?: string }
+}
 
 export interface SharedGateAction {
   id: string
@@ -117,7 +102,7 @@ export interface FieldGroup {
 
 export interface ManifestPage {
   id: string
-  name: string
+  name?: string
   path: string
   required?: boolean
   sections?: string[]
@@ -141,13 +126,13 @@ export type ResponsiveStyleValue = {
 }
 
 export interface StyleControl {
-  type: 'buttonGroup' | 'slider' | 'colorGrid'
+  type: 'buttonGroup' | 'slider' | 'colorGrid' | 'colorPicker' | 'select' | 'toggle'
   property: string
   label: string
   default?: string
   responsive?: boolean             // Only valid on fontSize sliders. Enables Desktop/Tablet/Mobile tabs in the admin panel.
-  options?: { value: string; label: string; icon?: string }[]
-  presets?: { value: string; label: string }[]
+  options?: (string | { value: string; label: string; icon?: string })[]
+  presets?: unknown[]
   min?: number
   max?: number
   step?: number
@@ -163,10 +148,10 @@ export interface SectionStyleControls {
 export interface ManifestSection {
   id: string
   name: string
-  description: string
+  description?: string
   dataFile?: string
   dataType?: 'object' | 'array'
-  data?: any
+  data?: JsonValue
   required: boolean
   enabled?: boolean
   showInNav?: boolean
@@ -209,7 +194,7 @@ export interface FieldSchema {
   step?: number
   aiIgnore?: boolean
   aiHint?: string
-  example?: any
+  example?: JsonValue
   /** For collectionPicker widget: ID of the referenced collection */
   collectionId?: string
   /** Whether this field can be edited by admin users. Defaults to true if omitted. */
@@ -231,7 +216,7 @@ export interface SectionSchema {
 
 export interface CollectionItem {
   id: string
-  [field: string]: any
+  [field: string]: JsonValue
 }
 
 export interface Collection {
@@ -320,6 +305,18 @@ export interface FormSubmission {
   source_metadata: ResolvedSubmissionSource | null
   ip_address: string | null
   is_read: boolean
+  call_status?: CallStatus | null
+  call_scheduled_for?: string | null
+  call_completed_at?: string | null
+  call_attempts?: number | null
+  call_property_context?: string | null
+  lead_status?: LeadStatus
+  attended_by?: AttendedBy
+  attended_user_id?: string | null
+  attended_at?: string | null
+  call_notes?: string | null
+  call_transcript_raw?: JsonValue | null
+  call_transcript_text?: string | null
   created_at: string
 }
 
@@ -342,9 +339,9 @@ export interface Draft {
   template_slug: string
   current_step: number
   raw_text: string
-  section_data: Record<string, any>
+  section_data: Record<string, JsonValue>
   sections_registry: Record<string, { enabled: boolean; showInNav?: boolean }>
-  collection_data: Record<string, any[]>
+  collection_data: Record<string, JsonArray>
   project_name: string | null
   site_slug: string | null
   last_active_page: string | null
@@ -382,6 +379,7 @@ export interface SiteData {
    * `enabled` controls whether the section renders on the live site (visitor-facing).
    */
   _sections?: Record<string, { enabled: boolean; showInNav?: boolean }>
+  _collections?: Record<string, JsonArray>
   [sectionId: string]: unknown
 }
 

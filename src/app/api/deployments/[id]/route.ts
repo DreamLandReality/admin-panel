@@ -1,8 +1,22 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { type NextRequest } from 'next/server'
+import { requireCapability } from '@/lib/api/auth'
+import { apiData, apiError, apiOk } from '@/lib/api/response'
+import { parseJsonRecordBody } from '@/lib/api/request'
 import { deleteProject } from '@/lib/deploy/cloudflare'
+import type { SiteData } from '@/types'
 
 type RouteContext = { params: { id: string } }
+
+function getNestedString(source: Record<string, unknown>, path: string): string | null {
+  let current: unknown = source
+  for (const key of path.split('.')) {
+    if (current === null || typeof current !== 'object' || Array.isArray(current)) {
+      return null
+    }
+    current = (current as Record<string, unknown>)[key]
+  }
+  return typeof current === 'string' ? current : null
+}
 
 /**
  * GET /api/deployments/[id]
@@ -10,11 +24,9 @@ type RouteContext = { params: { id: string } }
  * Used by client components that need to bootstrap the editor.
  */
 export async function GET(_req: NextRequest, { params }: RouteContext) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   const { data: deployment, error: depError } = await supabase
     .from('deployments')
@@ -24,16 +36,20 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     .single()
 
   if (depError || !deployment) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return apiError('Not found', 404)
   }
 
-  const { data: template } = await supabase
+  const { data: template, error: templateError } = await supabase
     .from('templates')
     .select('*')
     .eq('id', deployment.template_id)
     .maybeSingle()
 
-  return NextResponse.json({ data: { deployment, template } })
+  if (templateError) {
+    return apiError(templateError.message, 500)
+  }
+
+  return apiData({ deployment, template })
 }
 
 /**
@@ -46,41 +62,38 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
  *              | 'republish' : persist edits + trigger deploy pipeline (future)
  */
 export async function PATCH(req: NextRequest, { params }: RouteContext) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canEditSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
-  let body: { site_data: Record<string, unknown>; action: 'save' | 'republish' | 'cancel' }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-  }
-  const { site_data, action } = body
+  const bodyResult = await parseJsonRecordBody(req)
+  if (!bodyResult.ok) return bodyResult.response
+  const body = bodyResult.data
+  const site_data = body.site_data as SiteData | undefined
+  const action = body.action as 'save' | 'republish' | 'cancel' | undefined
 
   if (!site_data || !action) {
-    return NextResponse.json(
-      { error: 'site_data and action are required' },
-      { status: 400 }
-    )
+    return apiError('site_data and action are required', 400)
   }
 
   // Verify ownership before writing
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('deployments')
     .select('id')
     .eq('id', params.id)
     .eq('deployed_by', user.id)
     .maybeSingle()
 
+  if (existingError) {
+    return apiError(existingError.message, 500)
+  }
+
   if (!existing) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return apiError('Not found', 404)
   }
 
   if (action === 'republish') {
-    return NextResponse.json({ error: 'republish via PATCH is not yet implemented — use POST /api/deploy' }, { status: 501 })
+    return apiError('republish via PATCH is not yet implemented — use POST /api/deploy', 501)
   }
 
   if (action === 'cancel') {
@@ -98,22 +111,19 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       .maybeSingle()
 
     if (cancelErr) {
-      return NextResponse.json({ error: cancelErr.message }, { status: 500 })
+      return apiError(cancelErr.message, 500)
     }
     if (!cancelled) {
-      return NextResponse.json(
-        { error: 'Deployment is not in progress — cannot cancel.' },
-        { status: 409 }
-      )
+      return apiError('Deployment is not in progress — cannot cancel.', 409)
     }
-    return NextResponse.json({ data: cancelled })
+    return apiData(cancelled)
   }
 
   // Extract screenshot from site_data using the same fallback logic as the deploy pipeline
-  const sd = site_data as any
+  const siteDataRecord = site_data as Record<string, unknown>
   const extractedScreenshot: string | null =
-    (typeof sd?.seo?.image === 'string' && sd.seo.image.startsWith('http') ? sd.seo.image : null) ??
-    (typeof sd?.hero?.backgroundImage === 'string' && sd.hero.backgroundImage.startsWith('http') ? sd.hero.backgroundImage : null) ??
+    (getNestedString(siteDataRecord, 'seo.image')?.startsWith('http') ? getNestedString(siteDataRecord, 'seo.image') : null) ??
+    (getNestedString(siteDataRecord, 'hero.backgroundImage')?.startsWith('http') ? getNestedString(siteDataRecord, 'hero.backgroundImage') : null) ??
     null
 
   const { data, error } = await supabase
@@ -123,16 +133,17 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
       has_unpublished_changes: true,
       ...(extractedScreenshot ? { screenshot_url: extractedScreenshot } : {}),
       updated_at: new Date().toISOString(),
-    })
-    .eq('id', params.id)
-    .select('id, status, has_unpublished_changes, updated_at')
-    .single()
+      })
+      .eq('id', params.id)
+      .eq('deployed_by', user.id)
+      .select('id, status, has_unpublished_changes, updated_at')
+      .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiError(error.message, 500)
   }
 
-  return NextResponse.json({ data })
+  return apiData(data)
 }
 
 /**
@@ -146,11 +157,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: RouteContext
 ) {
-  const supabase = createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth = await requireCapability('canManageSites')
+  if (!auth.ok) return auth.response
+  const { supabase, user } = auth
 
   const { data: deployment, error: fetchError } = await supabase
     .from('deployments')
@@ -160,14 +169,11 @@ export async function DELETE(
     .single()
 
   if (fetchError || !deployment) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return apiError('Not found', 404)
   }
 
   if (deployment.status !== 'live') {
-    return NextResponse.json(
-      { error: 'Only live deployments can be deleted' },
-      { status: 400 }
-    )
+    return apiError('Only live deployments can be deleted', 400)
   }
 
   // 1. Delete Cloudflare Pages project (hard delete — site goes offline)
@@ -185,10 +191,11 @@ export async function DELETE(
       updated_at: new Date().toISOString(),
     })
     .eq('id', params.id)
+    .eq('deployed_by', user.id)
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 })
+    return apiError(updateError.message, 500)
   }
 
-  return NextResponse.json({ status: 'archived' })
+  return apiOk({ status: 'archived' })
 }

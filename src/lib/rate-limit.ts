@@ -1,6 +1,8 @@
 /**
  * Simple in-memory sliding-window rate limiter.
- * No external dependencies — suitable for single-instance deployments.
+ * No external dependencies — suitable for the current internal, single-instance
+ * launch model. This is not a distributed limiter: every server instance keeps
+ * its own counters, and counters reset on process restart.
  *
  * Usage:
  *   const limiter = createRateLimiter({ windowMs: 60_000, max: 10 })

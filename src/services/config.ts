@@ -1,4 +1,6 @@
-import { errorResult, getResponseError, isRecord, readJson, toServiceError } from './http'
+import { isAppConfigPayload, unwrapDataEnvelope } from '@/lib/api/contracts'
+import { apiJsonRequest } from './api-client'
+import { errorResult } from './http'
 import type { Result, ServiceRequestOptions } from './types'
 
 export interface AppConfig {
@@ -7,28 +9,22 @@ export interface AppConfig {
 }
 
 export async function getAppConfig(options?: ServiceRequestOptions): Promise<Result<AppConfig>> {
-  try {
-    const response = await fetch('/api/config', { signal: options?.signal })
-    const payload = await readJson(response)
-    if (!response.ok) {
-      return { ok: false, error: getResponseError(response, payload, 'Failed to load app config.') }
-    }
-    if (
-      !isRecord(payload) ||
-      typeof payload.isAiConfigured !== 'boolean' ||
-      typeof payload.isGeminiConfigured !== 'boolean'
-    ) {
-      return errorResult('App config response was invalid.')
-    }
+  const result = await apiJsonRequest('/api/config', {
+    signal: options?.signal,
+    fallback: 'Failed to load app config.',
+  })
+  if (!result.ok) return result
 
-    return {
-      ok: true,
-      data: {
-        isAiConfigured: payload.isAiConfigured,
-        isGeminiConfigured: payload.isGeminiConfigured,
-      },
-    }
-  } catch (error) {
-    return { ok: false, error: toServiceError(error, 'Failed to load app config.') }
+  const payload = unwrapDataEnvelope(result.data)
+  if (!isAppConfigPayload(payload)) {
+    return errorResult('App config response was invalid.')
+  }
+
+  return {
+    ok: true,
+    data: {
+      isAiConfigured: payload.isAiConfigured,
+      isGeminiConfigured: payload.isGeminiConfigured,
+    },
   }
 }
