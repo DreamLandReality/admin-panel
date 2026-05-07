@@ -1,17 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   CheckIcon as Check,
   ExternalLinkIcon as ExternalLink,
   MailIcon as Mail,
+  PhoneCallIcon as PhoneCall,
   PhoneIcon as Phone,
   XIcon as X,
 } from '@/components/icons'
 import { cn } from '@/lib/utils/cn'
-import { StatusBadge, TypePill } from './enquiry-badges'
-import { formatDate, isLeadSourceAccent, timeAgo } from './enquiry-format'
-import type { Enquiry, FollowUpUpdateInput, LeadStatus } from '@/services/enquiry'
+import { TypePill } from './enquiry-badges'
+import { formatDate, timeAgo } from './enquiry-format'
+import type { Enquiry, LeadProgressUpdateInput, LeadStatus } from '@/services/enquiry'
 
 const LEAD_STATUS_OPTIONS: Array<{ value: LeadStatus; label: string }> = [
   { value: 'new', label: 'New' },
@@ -39,10 +40,7 @@ const HANDLED_BY_LABELS: Record<NonNullable<Enquiry['attended_by']>, string> = {
 interface EnquiryPanelProps {
   enquiry: Enquiry | null
   onClose: () => void
-  onMarkRead: (id: string) => void
-  canMarkRead: boolean
-  marking: string | null
-  onUpdateFollowUp: (id: string, input: FollowUpUpdateInput) => Promise<void>
+  onUpdateLeadProgress: (id: string, input: LeadProgressUpdateInput) => Promise<void>
   followUpSaving: boolean
 }
 
@@ -52,6 +50,25 @@ function formatTime(iso: string) {
     minute: '2-digit',
     hour12: true,
   })
+}
+
+function labelFromId(id: string) {
+  return id
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function getSourceDetail(enquiry: Enquiry) {
+  const sourceLabel = enquiry.source.label.toLowerCase()
+  const parts = [
+    enquiry.source.sectionId ? labelFromId(enquiry.source.sectionId) : null,
+    enquiry.source.gateId ? labelFromId(enquiry.source.gateId) : null,
+  ].filter((part): part is string => Boolean(part))
+    .filter((part) => part.toLowerCase() !== sourceLabel)
+
+  return parts.length ? parts.join(' · ') : null
 }
 
 function getCallStatusText(enquiry: Enquiry) {
@@ -64,27 +81,55 @@ function getCallStatusText(enquiry: Enquiry) {
   return CALL_STATUS_LABELS[enquiry.call_status]
 }
 
+function syncTextareaHeight(textarea: HTMLTextAreaElement) {
+  const maxHeight = Math.min(window.innerHeight * 0.36, 320)
+
+  textarea.style.height = 'auto'
+  textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+}
+
+function Section({
+  label,
+  children,
+  className,
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn('space-y-3', className)}>
+      <p className="text-[10px] font-semibold uppercase tracking-label-lg text-foreground-muted/75">
+        {label}
+      </p>
+      {children}
+    </section>
+  )
+}
+
 export function EnquiryPanel({
   enquiry,
   onClose,
-  onMarkRead,
-  canMarkRead,
-  marking,
-  onUpdateFollowUp,
+  onUpdateLeadProgress,
   followUpSaving,
 }: EnquiryPanelProps) {
   const [leadStatus, setLeadStatus] = useState<LeadStatus>('new')
   const [callNotes, setCallNotes] = useState('')
+  const notesRef = useRef<HTMLTextAreaElement>(null)
   const isOpen = !!enquiry
-  const isSourceAccent = isLeadSourceAccent(enquiry?.source)
-  const isUnread = enquiry ? !enquiry.is_read : false
   const projectName = enquiry
     ? (enquiry.deployments?.project_name ?? enquiry.deployment_slug)
     : ''
   const handledBy = enquiry?.attended_by
     ? HANDLED_BY_LABELS[enquiry.attended_by]
     : 'Not handled yet'
-  const hasFollowUpChanges = useMemo(() => {
+  const customerMessage = enquiry?.message?.trim() ?? ''
+  const sourceDetail = enquiry ? getSourceDetail(enquiry) : null
+  const showVoiceSummary = enquiry
+    ? !['pending', 'skipped'].includes(enquiry.call_status)
+    : false
+  const hasLeadProgressChanges = useMemo(() => {
     if (!enquiry) return false
     return leadStatus !== enquiry.lead_status || callNotes !== (enquiry.call_notes ?? '')
   }, [callNotes, enquiry, leadStatus])
@@ -95,219 +140,215 @@ export function EnquiryPanel({
     setCallNotes(enquiry.call_notes ?? '')
   }, [enquiry])
 
+  useEffect(() => {
+    if (!notesRef.current) return
+    syncTextareaHeight(notesRef.current)
+  }, [callNotes, enquiry?.id])
+
   return (
     <>
       <div
         className={cn(
-          'fixed inset-0 z-[34] transition-opacity duration-300',
+          'fixed inset-0 z-[34]',
           isOpen ? 'pointer-events-auto' : 'pointer-events-none opacity-0'
         )}
         onClick={onClose}
       />
 
-      <div className={cn(
-        'fixed top-0 right-0 h-full w-[440px] bg-background border-l border-border shadow-modal z-[35] flex flex-col transition-transform duration-300 ease-spring',
+      <aside className={cn(
+        'fixed top-0 right-0 z-[35] h-full w-full max-w-[480px] bg-background border-l border-border/80 flex flex-col transition-transform duration-300 ease-spring',
         isOpen ? 'translate-x-0' : 'translate-x-full'
       )}>
         {enquiry && (
           <>
-            <div className={cn(
-              'flex items-start justify-between px-7 pt-7 pb-6 border-b border-border shrink-0',
-              isSourceAccent && isUnread && 'border-warning/10'
-            )}>
-              <div className={cn(
-                'absolute left-0 top-8 h-12 w-[3px] rounded-r-full',
-                isUnread ? isSourceAccent ? 'bg-warning' : 'bg-foreground/30' : 'bg-transparent'
-              )} />
-
-              <div className="min-w-0 pr-4">
-                <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-2">
-                  {formatDate(enquiry.created_at)} · {timeAgo(enquiry.created_at)}
-                </p>
-                <h2 className="font-serif text-[24px] leading-tight text-foreground mb-2">
-                  {enquiry.name}
-                </h2>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <StatusBadge isRead={enquiry.is_read} source={enquiry.source} />
-                  <TypePill source={enquiry.source} />
+            <header className="shrink-0 border-b border-border px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-label-lg text-foreground-muted mb-2">
+                    {formatDate(enquiry.created_at)} · {timeAgo(enquiry.created_at)}
+                  </p>
+                  <h2 className="font-serif text-[28px] leading-tight text-foreground truncate">
+                    {enquiry.name}
+                  </h2>
+                  <p className="mt-1 text-body-sm text-foreground-muted truncate">
+                    {projectName}
+                  </p>
                 </div>
+
+                <button
+                  onClick={onClose}
+                  aria-label="Close enquiry details"
+                  className="h-10 w-10 rounded-lg border border-border bg-surface/40 text-foreground-muted hover:text-foreground hover:bg-surface-hover hover:border-border-hover transition-colors flex items-center justify-center shrink-0"
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
               </div>
+            </header>
 
-              <button
-                onClick={onClose}
-                className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-foreground-muted hover:text-foreground hover:border-border-hover transition-colors shrink-0 mt-0.5"
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-7 py-6 space-y-7">
-              <div>
-                <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-3">
-                  Contact
-                </p>
-                <div className="space-y-2">
-                  <a
-                    href={`mailto:${enquiry.email}`}
-                    className="flex items-center gap-2.5 text-body-sm text-foreground hover:text-foreground/70 transition-colors group"
-                  >
-                    <div className="w-6 h-6 rounded-md bg-foreground/[0.05] border border-border flex items-center justify-center shrink-0">
-                      <Mail size={10} strokeWidth={1.75} />
-                    </div>
-                    {enquiry.email}
-                  </a>
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-7">
+              <Section label="Lead summary">
+                <div className="divide-y divide-border/70 rounded-lg border border-border bg-surface/30 text-body-sm">
                   {enquiry.phone && (
-                    <a
-                      href={`tel:${enquiry.phone}`}
-                      className="flex items-center gap-2.5 text-body-sm text-foreground hover:text-foreground/70 transition-colors"
-                    >
-                      <div className="w-6 h-6 rounded-md bg-foreground/[0.05] border border-border flex items-center justify-center shrink-0">
-                        <Phone size={10} strokeWidth={1.75} />
-                      </div>
-                      {enquiry.phone}
-                    </a>
+                    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                      <span className="text-foreground-muted">Phone</span>
+                      <a
+                        href={`tel:${enquiry.phone}`}
+                        className="inline-flex min-w-0 items-center gap-2 text-foreground transition-colors hover:text-foreground/75"
+                      >
+                        <Phone size={13} strokeWidth={1.8} className="shrink-0 text-foreground-muted" />
+                        <span className="truncate">{enquiry.phone}</span>
+                      </a>
+                    </div>
+                  )}
+                  {enquiry.email && (
+                    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                      <span className="text-foreground-muted">Email</span>
+                      <a
+                        href={`mailto:${enquiry.email}`}
+                        className="inline-flex min-w-0 items-center gap-2 text-foreground transition-colors hover:text-foreground/75"
+                      >
+                        <Mail size={13} strokeWidth={1.8} className="shrink-0 text-foreground-muted" />
+                        <span className="truncate">{enquiry.email}</span>
+                      </a>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                    <span className="text-foreground-muted">Source</span>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <TypePill source={enquiry.source} />
+                      {sourceDetail && (
+                        <span className="min-w-0 text-foreground/80">{sourceDetail}</span>
+                      )}
+                    </div>
+                  </div>
+                  {showVoiceSummary && (
+                    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                      <span className="text-foreground-muted">Call</span>
+                      <span className="inline-flex min-w-0 items-center gap-2 text-foreground/85">
+                        <PhoneCall size={13} strokeWidth={1.8} className="shrink-0 text-foreground-muted" />
+                        <span className="truncate">{getCallStatusText(enquiry)}</span>
+                      </span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                    <span className="text-foreground-muted">Owner</span>
+                    <span className="text-foreground/85">{handledBy}</span>
+                  </div>
+                  {enquiry.source_url && (
+                    <div className="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                      <span className="text-foreground-muted">Page</span>
+                      <a
+                        href={enquiry.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-w-0 items-center gap-1.5 text-foreground-muted transition-colors hover:text-foreground"
+                      >
+                        Open submitted page
+                        <ExternalLink size={10} strokeWidth={1.75} className="shrink-0" />
+                      </a>
+                    </div>
                   )}
                 </div>
-              </div>
+              </Section>
 
-              <div>
-                <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-3">
-                  Property
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-body-sm text-foreground font-medium">{projectName}</span>
-                  <TypePill source={enquiry.source} />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-3">
-                  Message
-                </p>
-                {enquiry.message ? (
-                  <blockquote className={cn(
-                    'border-l-2 pl-4 py-1',
-                    isSourceAccent ? 'border-warning/30' : 'border-border'
-                  )}>
-                    <p className="font-serif text-[14px] italic text-foreground/65 leading-relaxed whitespace-pre-wrap">
-                      &ldquo;{enquiry.message}&rdquo;
+              {customerMessage && (
+                <Section label="Customer message">
+                  <div className="border-l-2 border-border pl-4">
+                    <p className="font-serif text-[15px] text-foreground/75 leading-relaxed whitespace-pre-wrap italic">
+                      {customerMessage}
                     </p>
-                  </blockquote>
-                ) : (
-                  <p className="text-body-sm text-foreground-muted italic">No message provided.</p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-3">
-                  Submitted from
-                </p>
-                <a
-                  href={enquiry.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-start gap-1.5 text-body-sm text-foreground/50 hover:text-foreground transition-colors break-all"
-                >
-                  {enquiry.source_url}
-                  <ExternalLink size={10} strokeWidth={1.75} className="shrink-0 mt-0.5" />
-                </a>
-              </div>
-
-              <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-                <div>
-                  <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-1.5">
-                    Call status
-                  </p>
-                  <p className="text-body-sm text-foreground">{getCallStatusText(enquiry)}</p>
-                </div>
-                <div>
-                  <p className="text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-1.5">
-                    Handled by
-                  </p>
-                  <p className="text-body-sm text-foreground">{handledBy}</p>
-                </div>
-              </div>
+                  </div>
+                </Section>
+              )}
 
               <form
-                className="rounded-lg border border-border bg-surface p-4 space-y-4"
+                className="space-y-4 pt-1"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  void onUpdateFollowUp(enquiry.id, {
+                  void onUpdateLeadProgress(enquiry.id, {
                     lead_status: leadStatus,
                     call_notes: callNotes,
                   })
                 }}
               >
-                <div>
-                  <label
-                    htmlFor="lead-status"
-                    className="block text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-2"
-                  >
-                    Follow-up status
-                  </label>
-                  <select
-                    id="lead-status"
-                    value={leadStatus}
-                    onChange={(event) => setLeadStatus(event.target.value as LeadStatus)}
-                    className="h-9 w-full rounded-lg border border-border bg-background px-3 text-body-sm text-foreground outline-none focus:border-border-hover"
-                  >
-                    {LEAD_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-label-lg text-foreground-muted/75">
+                      Follow-up
+                    </p>
+                    {!hasLeadProgressChanges && !followUpSaving && (
+                      <span
+                        aria-live="polite"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/45 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-label text-success"
+                      >
+                        <Check size={11} strokeWidth={2.3} />
+                        Saved
+                      </span>
+                    )}
+                  </div>
 
-                <div>
-                  <label
-                    htmlFor="call-notes"
-                    className="block text-micro font-semibold uppercase tracking-label-lg text-foreground-muted mb-2"
-                  >
-                    Notes
-                  </label>
-                  <textarea
-                    id="call-notes"
-                    value={callNotes}
-                    onChange={(event) => setCallNotes(event.target.value)}
-                    rows={5}
-                    className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-body-sm text-foreground outline-none focus:border-border-hover"
-                  />
-                </div>
+                  <div className="space-y-4 rounded-lg border border-border bg-surface/35 p-4">
+                    <div className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-3">
+                      <label
+                        htmlFor="lead-status"
+                        className="text-body-sm font-medium text-foreground-muted"
+                      >
+                        Status
+                      </label>
+                      <select
+                        id="lead-status"
+                        value={leadStatus}
+                        onChange={(event) => setLeadStatus(event.target.value as LeadStatus)}
+                        className="h-10 w-full rounded-lg border border-border bg-background px-3 text-body-sm text-foreground outline-none transition-colors focus:border-border-hover"
+                      >
+                        {LEAD_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <button
-                  type="submit"
-                  disabled={followUpSaving || !hasFollowUpChanges}
-                  className="h-9 w-full rounded-lg bg-foreground px-4 text-label-lg font-semibold uppercase tracking-label text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-                >
-                  {followUpSaving ? 'Saving...' : 'Save follow-up'}
-                </button>
+                    <div>
+                      <label
+                        htmlFor="call-notes"
+                        className="mb-2 block text-body-sm font-medium text-foreground-muted"
+                      >
+                        Notes
+                      </label>
+                      <textarea
+                        ref={notesRef}
+                        id="call-notes"
+                        value={callNotes}
+                        onChange={(event) => {
+                          setCallNotes(event.target.value)
+                          syncTextareaHeight(event.target)
+                        }}
+                        placeholder="Next step, call outcome, or context for the team."
+                        rows={5}
+                        className="max-h-[min(36vh,320px)] min-h-[132px] w-full resize-none rounded-lg border border-border bg-background px-3 py-3 text-body-sm text-foreground outline-none transition-colors focus:border-border-hover placeholder:text-foreground-muted/55"
+                      />
+                    </div>
+
+                    {(hasLeadProgressChanges || followUpSaving) && (
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={followUpSaving}
+                          className="h-9 rounded-lg bg-foreground px-4 text-label font-semibold uppercase tracking-label text-background transition-opacity hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+                        >
+                          {followUpSaving ? 'Saving...' : 'Save progress'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </section>
               </form>
-            </div>
 
-            <div className="px-7 py-5 border-t border-border shrink-0 flex items-center gap-3 flex-wrap">
-              <a
-                href={`mailto:${enquiry.email}`}
-                onClick={() => { if (isUnread && canMarkRead) onMarkRead(enquiry.id) }}
-                className="flex-1 flex items-center justify-center gap-2 h-9 rounded-lg bg-foreground text-background text-label-lg font-semibold uppercase tracking-label hover:opacity-90 transition-opacity"
-              >
-                <Mail size={11} strokeWidth={2} />
-                Reply via email
-              </a>
-              {canMarkRead && isUnread && (
-                <button
-                  onClick={() => onMarkRead(enquiry.id)}
-                  disabled={marking === enquiry.id}
-                  className="flex items-center gap-1.5 h-9 px-4 rounded-lg border border-border text-label-lg font-semibold uppercase tracking-label text-foreground-muted hover:text-foreground hover:border-border-hover transition-all disabled:opacity-40"
-                >
-                  <Check size={11} strokeWidth={2.5} />
-                  Mark read
-                </button>
-              )}
             </div>
           </>
         )}
-      </div>
+      </aside>
     </>
   )
 }

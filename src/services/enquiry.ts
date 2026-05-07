@@ -13,7 +13,6 @@ import {
 } from '@/lib/api/contracts'
 
 export type { AttendedBy, CallStats, CallStatus, LeadStatus }
-export type EnquiryStatusFilter = 'all' | 'unread' | `source:${string}`
 export type EnquirySortColumn = 'name' | 'date' | 'property'
 export type EnquirySortDirection = 'asc' | 'desc'
 
@@ -43,7 +42,6 @@ export interface Enquiry {
     gateId?: string
     known: boolean
   }
-  is_read: boolean
   created_at: string
   deployments: { project_name: string } | null
   call_status: CallStatus
@@ -65,19 +63,19 @@ export interface EnquiriesResult {
   page: number
   pageSize: number
   totalCount: number
-  unreadCount: number
+  newLeadCount: number
+  properties: Array<{ slug: string; name: string }>
   callStats: CallStats
 }
 
 export interface EnquirySummaryResult {
-  unreadCount: number
+  newLeadCount: number
   callStats: CallStats
 }
 
 export interface EnquiryQuery {
   page?: number
   pageSize?: number
-  status?: EnquiryStatusFilter
   property?: string
   search?: string
   sort?: EnquirySortColumn
@@ -86,7 +84,7 @@ export interface EnquiryQuery {
   leadStatus?: 'all' | LeadStatus
 }
 
-export interface FollowUpUpdateInput {
+export interface LeadProgressUpdateInput {
   lead_status: LeadStatus
   call_notes: string
 }
@@ -110,8 +108,15 @@ function isEnquiry(value: unknown): value is Enquiry {
     typeof value.email === 'string' &&
     isSource(value.source) &&
     isLeadStatus(value.lead_status) &&
-    typeof value.is_read === 'boolean' &&
     typeof value.created_at === 'string'
+  )
+}
+
+function isPropertyOption(value: unknown): value is { slug: string; name: string } {
+  return (
+    isRecord(value) &&
+    typeof value.slug === 'string' &&
+    typeof value.name === 'string'
   )
 }
 
@@ -122,7 +127,6 @@ function buildEnquiryListPath(query: EnquiryQuery = {}): string {
 
   params.set('page', String(page))
   params.set('pageSize', String(pageSize))
-  if (query.status && query.status !== 'all') params.set('status', query.status)
   if (query.property && query.property !== 'all') params.set('property', query.property)
   if (query.search?.trim()) params.set('search', query.search.trim())
   if (query.sort) params.set('sort', query.sort)
@@ -153,7 +157,9 @@ export const enquiryService = {
       typeof payload.page !== 'number' ||
       typeof payload.pageSize !== 'number' ||
       typeof payload.totalCount !== 'number' ||
-      typeof payload.unreadCount !== 'number' ||
+      typeof payload.newLeadCount !== 'number' ||
+      !Array.isArray(payload.properties) ||
+      !payload.properties.every(isPropertyOption) ||
       !isCallStats(payload.callStats)
     ) {
       return errorResult('Enquiries response was invalid.')
@@ -166,7 +172,8 @@ export const enquiryService = {
         page: payload.page,
         pageSize: payload.pageSize,
         totalCount: payload.totalCount,
-        unreadCount: payload.unreadCount,
+        newLeadCount: payload.newLeadCount,
+        properties: payload.properties,
         callStats: payload.callStats,
       },
     }
@@ -182,37 +189,31 @@ export const enquiryService = {
     const payload = unwrapDataEnvelope(result.data)
     if (
       !isRecord(payload) ||
-      typeof payload.unreadCount !== 'number' ||
+      typeof payload.newLeadCount !== 'number' ||
       !isCallStats(payload.callStats)
     ) {
       return errorResult('Enquiry summary response was invalid.')
     }
 
-    return { ok: true, data: { unreadCount: payload.unreadCount, callStats: payload.callStats } }
+    return {
+      ok: true,
+      data: {
+        newLeadCount: payload.newLeadCount,
+        callStats: payload.callStats,
+      },
+    }
   },
 
-  async markRead(id: string, options?: ServiceRequestOptions): Promise<Result<{ success: true }>> {
-    const result = await apiJsonRequest('/api/enquiries', {
-      method: 'PATCH',
-      signal: options?.signal,
-      fallback: 'Failed to mark enquiry as read.',
-      json: { action: 'mark_read', id },
-    })
-    if (!result.ok) return result
-
-    return { ok: true, data: { success: true } }
-  },
-
-  async updateFollowUp(
+  async updateLeadProgress(
     id: string,
-    input: FollowUpUpdateInput,
+    input: LeadProgressUpdateInput,
     options?: ServiceRequestOptions
   ): Promise<Result<{ success: true }>> {
     const result = await apiJsonRequest('/api/enquiries', {
       method: 'PATCH',
       signal: options?.signal,
-      fallback: 'Failed to update follow-up.',
-      json: { action: 'update_follow_up', id, ...input },
+      fallback: 'Failed to update lead progress.',
+      json: { action: 'update_lead_status', id, ...input },
     })
     if (!result.ok) return result
 

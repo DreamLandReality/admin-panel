@@ -31,7 +31,7 @@ export function DeploymentCard({
 
   return (
     <AnimatedCard index={index}>
-      <div className={canEdit ? 'group relative rounded-xl bg-card overflow-hidden cursor-pointer' : 'group relative rounded-xl bg-card overflow-hidden'}>
+      <div className={canEdit ? 'group relative rounded-xl border border-border bg-card overflow-hidden cursor-pointer' : 'group relative rounded-xl border border-border bg-card overflow-hidden'}>
         {/* Full-card link */}
         {canEdit && (
           <Link
@@ -42,7 +42,7 @@ export function DeploymentCard({
         )}
 
         {/* Thumbnail */}
-        <div className="aspect-card bg-muted relative overflow-hidden">
+        <div className="aspect-square bg-muted relative overflow-hidden">
           <DeploymentThumbnail
             src={thumbnailSrc}
             alt={`${deployment.project_name} preview`}

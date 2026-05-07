@@ -8,7 +8,7 @@ export interface TextInputProps extends React.InputHTMLAttributes<HTMLInputEleme
 
 const variantMap = {
   panel: 'panel-input',
-  underline: 'w-full border-0 border-b bg-transparent px-0 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none transition-colors',
+  underline: 'w-full rounded-xl border border-border-subtle bg-background/80 px-4 py-3 text-foreground placeholder:text-muted-foreground/50 focus:border-border-hover focus:outline-none focus:ring-2 focus:ring-accent/15 transition-[border-color,box-shadow,background-color]',
   default: 'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border-hover transition-colors',
 } as const
 

@@ -118,7 +118,6 @@ CREATE TABLE IF NOT EXISTS public.form_submissions (
   message          TEXT,
   source_url       TEXT        NOT NULL,
   ip_address       TEXT,
-  is_read          BOOLEAN     NOT NULL DEFAULT false,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -126,7 +125,6 @@ COMMENT ON TABLE  public.form_submissions IS 'Contact form submissions from depl
 COMMENT ON COLUMN public.form_submissions.deployment_slug IS 'Denormalized from deployments.slug for display without joins';
 COMMENT ON COLUMN public.form_submissions.source_url      IS 'HTTP Referer header — which page the form was on';
 COMMENT ON COLUMN public.form_submissions.ip_address      IS 'Used for rate limiting: max 10 per IP per hour';
-COMMENT ON COLUMN public.form_submissions.is_read         IS 'Admin marks as read in the enquiries tab';
 
 
 -- ============================================================================
@@ -233,11 +231,6 @@ CREATE INDEX IF NOT EXISTS idx_submissions_deployment_id
 -- Form submissions: sorted list without extra sort step
 CREATE INDEX IF NOT EXISTS idx_submissions_deployment_created
   ON public.form_submissions (deployment_id, created_at DESC);
-
--- Form submissions: unread count badge (WHERE is_read = false)
-CREATE INDEX IF NOT EXISTS idx_submissions_is_read
-  ON public.form_submissions (is_read)
-  WHERE is_read = false;
 
 -- Form submissions: rate limiting by IP
 CREATE INDEX IF NOT EXISTS idx_submissions_ip_created

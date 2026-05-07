@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils/cn'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-    Building2Icon,
     ChevronLeftIcon,
     LogOutIcon,
     MoonIcon,
@@ -16,8 +15,6 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { createClient } from '@/lib/supabase/client'
-import { Heading } from '@/components/primitives'
-import { Button } from '@/components/ui/button'
 import { useConfigQuery } from '@/hooks/queries/use-config-query'
 import { useEnquirySummaryQuery } from '@/hooks/queries/use-enquiry-summary-query'
 import type { UserRole } from '@/lib/auth/roles'
@@ -44,7 +41,7 @@ export function Sidebar({ role }: { role: UserRole | null }) {
         if (config?.isGeminiConfigured) providers.add('gemini')
         return providers
     }, [appConfigQuery.data])
-    const unreadEnquiries = enquirySummaryQuery.data?.unreadCount ?? 0
+    const newEnquiries = enquirySummaryQuery.data?.newLeadCount ?? 0
 
     useEffect(() => {
         setMounted(true)
@@ -112,177 +109,134 @@ export function Sidebar({ role }: { role: UserRole | null }) {
                     sidebarMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
                 )}
             >
-                {/* Logo Area */}
-                <Link href="/" className="flex items-center h-[96px] mb-4 border-b border-border px-5 group overflow-hidden" onClick={closeMobile}>
-                    <div className="flex w-9 h-9 items-center justify-center shrink-0 border border-border-subtle bg-surface-hover rounded-lg transition-transform duration-500 group-hover:scale-105 group-hover:bg-surface-active group-hover:border-border-hover">
-                        {sidebarCollapsed ? (
-                            <div className="text-foreground font-serif text-sm font-semibold tracking-wider">DR</div>
-                        ) : (
-                            <Building2Icon width={16} height={16} strokeWidth={1.5} className="text-foreground/80" />
-                        )}
+                <Link href="/" className="flex items-center h-20 border-b border-border/80 px-4 group overflow-hidden" onClick={closeMobile}>
+                    <div className="flex w-10 h-10 items-center justify-center shrink-0 border border-border bg-surface-hover rounded-lg transition-colors duration-150 group-hover:bg-surface-active group-hover:border-border-hover">
+                        <span className="text-foreground font-serif text-sm font-semibold tracking-wider">DR</span>
                     </div>
 
                     <div className={cn(
-                        "ml-4 flex flex-col justify-center whitespace-nowrap transition-all duration-500",
+                        "ml-3 flex flex-col justify-center whitespace-nowrap transition-all duration-200",
                         sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden ml-0' : 'w-auto opacity-100'
                     )}>
-                        <Heading variant="logo" as="span">Dream Land Reality</Heading>
-                        <div className="text-micro font-medium uppercase tracking-label-lg text-foreground-muted dark:text-white/30 mt-0.5">Architecture Suite</div>
+                        <span className="font-serif text-[18px] leading-none text-foreground tracking-tight">
+                            Dream Land
+                        </span>
+                        <span className="text-[10px] font-semibold uppercase tracking-label-lg text-foreground-muted mt-1">
+                            Reality Admin
+                        </span>
                     </div>
                 </Link>
 
-                {/* Navigation */}
-                <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-4 subtle-scrollbar">
-                    <div className={cn("px-7 mb-2 mt-4 transition-all duration-300", sidebarCollapsed ? "opacity-0 h-0 hidden" : "opacity-100 h-auto block")}>
-                        <span className="text-micro font-medium uppercase tracking-label-lg text-foreground-muted dark:text-white/30">Workspace</span>
-                    </div>
-
-                    {navItems.filter(i => i.group === 'workspace').map((item) => (
-                        <div key={item.href} onClick={closeMobile}><NavItem item={item} active={isActive(item, pathname)} isCollapsed={sidebarCollapsed} /></div>
-                    ))}
-
-                    <div className="my-6 border-t border-border dark:border-white/[0.04] mx-4" />
-
-                    <div className={cn("px-7 mb-2 mt-2 transition-all duration-300", sidebarCollapsed ? "opacity-0 h-0 hidden" : "opacity-100 h-auto block")}>
-                        <span className="text-micro font-medium uppercase tracking-label-lg text-foreground-muted dark:text-white/30">System</span>
-                    </div>
-                    {navItems.filter(i => i.group === 'system').map((item) => (
+                <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden pt-5 pb-3 subtle-scrollbar">
+                    {navItems.map((item) => (
                         <div key={item.href} onClick={closeMobile}>
                             <NavItem
                                 item={item}
                                 active={isActive(item, pathname)}
                                 isCollapsed={sidebarCollapsed}
-                                badge={item.href === '/enquiry' ? unreadEnquiries : undefined}
+                                badge={item.href === '/enquiry' ? newEnquiries : undefined}
                             />
                         </div>
                     ))}
 
                     <div className="flex-1" />
 
-                    <div className="mt-8 mb-4 border-t border-border dark:border-white/[0.04] mx-4" />
-
-                    {/* Bottom Actions */}
-                    <div className={cn("px-4 mb-3 flex flex-col gap-3 transition-all", sidebarCollapsed ? "items-center" : "items-stretch")}>
-
-                        {/* Top Utility Row */}
-                        <div className={cn("flex gap-2 w-full", sidebarCollapsed ? "flex-col" : "flex-row items-center")}>
-
-                            {/* AI Provider Pill */}
-                            <div className="relative group/pill flex-1">
+                    <div className={cn("px-3 mt-8 mb-3 transition-all", sidebarCollapsed ? "space-y-2" : "space-y-3")}>
+                        {sidebarCollapsed ? (
+                            <>
                                 <button
                                     onClick={cycleProvider}
                                     disabled={!canToggle}
-                                    className={cn(
-                                        "w-full flex items-center gap-2.5 rounded-lg border bg-surface-hover shadow-sm transition-all overflow-hidden relative",
-                                        sidebarCollapsed ? "justify-center p-0 w-9 h-9 shrink-0" : "px-3 h-9",
-                                        canToggle
-                                            ? "border-border-subtle cursor-pointer hover:bg-surface-active hover:border-border-hover"
-                                            : "border-border-subtle cursor-default"
-                                    )}
+                                    className="relative h-10 w-10 rounded-lg border border-border bg-surface-hover text-foreground-muted hover:text-foreground hover:bg-surface-active transition-colors flex items-center justify-center"
                                     aria-label={canToggle ? `Switch AI provider (currently ${pConfig.label})` : `${isAnyAiConfigured ? pConfig.label : 'AI'} active`}
                                 >
-                                    <div className="absolute inset-0 bg-gradient-to-r from-black/[0.02] dark:from-white/[0.02] to-transparent pointer-events-none" />
-
-                                    {/* Status dot */}
-                                    <div className="relative flex h-2 w-2 shrink-0 items-center justify-center">
-                                        {isAnyAiConfigured && (
-                                            <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-40", pConfig.dotClass)} />
-                                        )}
-                                        <span className={cn(
-                                            "relative inline-flex h-1.5 w-1.5 rounded-full",
-                                            isAnyAiConfigured ? pConfig.dotClass : "bg-foreground/20 dark:bg-white/20"
-                                        )} />
-                                    </div>
-
-                                    {/* Label */}
-                                    {!sidebarCollapsed && (
-                                        <span className="text-label font-medium uppercase tracking-label-sm text-foreground-muted dark:text-white/60 whitespace-nowrap flex-1 text-left">
-                                            {isAnyAiConfigured ? pConfig.label : 'AI'} Active
-                                        </span>
-                                    )}
-
-                                    {/* Chevron arrow when toggleable */}
-                                    {canToggle && !sidebarCollapsed && (
-                                        <ChevronRightIcon width={11} height={11} strokeWidth={2} className="shrink-0 text-foreground-muted/40 dark:text-white/25" />
-                                    )}
-
-                                    {/* Collapsed: provider initial overlay */}
-                                    {sidebarCollapsed && isAnyAiConfigured && (
-                                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-foreground-muted dark:text-white/50 tracking-wide">
+                                    <span className={cn("h-2 w-2 rounded-full", isAnyAiConfigured ? pConfig.dotClass : "bg-foreground/20")} />
+                                    {isAnyAiConfigured && (
+                                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
                                             {pConfig.shortLabel}
                                         </span>
                                     )}
                                 </button>
-
-                                {/* Collapsed tooltip */}
-                                {sidebarCollapsed && (
-                                    <div className="invisible opacity-0 group-hover/pill:visible group-hover/pill:opacity-100 absolute left-full ml-1 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-foreground dark:bg-black border border-black/10 dark:border-white/[0.08] text-white text-label-lg font-medium tracking-widest uppercase rounded-lg shadow-2xl whitespace-nowrap pointer-events-none transition-all duration-200 z-50">
-                                        {isAnyAiConfigured ? `${pConfig.label} Active` : 'AI Inactive'}
-                                        {canToggle && ' · click to switch'}
+                                <button
+                                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                                    className="h-10 w-10 rounded-lg border border-border bg-surface-hover text-foreground-muted hover:text-foreground hover:bg-surface-active transition-colors flex items-center justify-center"
+                                    aria-label="Switch color theme"
+                                >
+                                    {mounted && (theme === 'dark'
+                                        ? <SunIcon width={15} height={15} strokeWidth={1.6} />
+                                        : <MoonIcon width={15} height={15} strokeWidth={1.6} />
+                                    )}
+                                </button>
+                                <button
+                                    onClick={handleSignOut}
+                                    className="h-10 w-10 rounded-lg border border-border bg-surface-hover text-foreground-muted hover:text-foreground hover:bg-surface-active transition-colors flex items-center justify-center"
+                                    aria-label="Log out"
+                                >
+                                    <LogOutIcon width={15} height={15} strokeWidth={1.6} />
+                                </button>
+                            </>
+                        ) : (
+                            <div className="rounded-lg border border-border bg-surface/55 p-3">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-10 h-10 rounded-lg bg-background text-foreground/80 font-sans text-[11px] font-semibold uppercase tracking-widest flex items-center justify-center shrink-0 border border-border">
+                                        {userEmail ? userEmail.split('@')[0].slice(0, 2).toUpperCase() : '??'}
                                     </div>
-                                )}
-                            </div>
-
-                            {/* Theme Toggle */}
-                            <Button
-                                variant="icon"
-                                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                                className={sidebarCollapsed ? '' : 'w-10'}
-                                aria-label="Switch to dark/light mode"
-                            >
-                                {mounted && (
-                                    <div className="relative w-4 h-4">
-                                        <SunIcon className="absolute inset-0 h-4 w-4 rotate-0 scale-100 transition-all duration-500 ease-out dark:-rotate-90 dark:scale-0" strokeWidth={1.5} />
-                                        <MoonIcon className="absolute inset-0 h-4 w-4 rotate-90 scale-0 transition-all duration-500 ease-out dark:rotate-0 dark:scale-100" strokeWidth={1.5} />
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[13px] font-medium text-foreground truncate">{userEmail?.split('@')[0] ?? 'User'}</p>
+                                        <p className="text-[10px] text-foreground-muted truncate mt-0.5">{userEmail ?? ''}</p>
                                     </div>
-                                )}
-                            </Button>
-                        </div>
-
-                        {/* User Profile Block */}
-                        <div className={cn("flex flex-col gap-2 w-full", sidebarCollapsed && "items-center")}>
-
-                            {/* Profile Info */}
-                            <div className={cn(
-                                "flex items-center transition-all duration-300",
-                                sidebarCollapsed ? "justify-center p-0" : "gap-3 px-2 py-1.5 rounded-lg border border-transparent hover:bg-surface-hover"
-                            )}>
-                                <div className="w-9 h-9 rounded-lg bg-surface-hover text-foreground/80 font-sans text-label-lg font-medium uppercase tracking-widest flex items-center justify-center shrink-0 border border-border-subtle">
-                                    {userEmail ? userEmail.split('@')[0].slice(0, 2).toUpperCase() : '??'}
+                                    <button
+                                        onClick={handleSignOut}
+                                        className="h-8 w-8 rounded-md text-foreground-muted hover:text-foreground hover:bg-surface-hover transition-colors flex items-center justify-center shrink-0"
+                                        aria-label="Log out"
+                                    >
+                                        <LogOutIcon width={14} height={14} strokeWidth={1.6} />
+                                    </button>
                                 </div>
-                                {!sidebarCollapsed && (
-                                    <div className="flex flex-col overflow-hidden">
-                                        <span className="text-body-sm font-medium text-foreground dark:text-white tracking-wide truncate">{userEmail?.split('@')[0] ?? 'User'}</span>
-                                        <span className="text-label text-foreground-muted dark:text-white/40 tracking-wider truncate mt-0.5">{userEmail ?? ''}</span>
-                                    </div>
-                                )}
+
+                                <div className="mt-3 grid grid-cols-[1fr_36px] gap-2">
+                                    <button
+                                        onClick={cycleProvider}
+                                        disabled={!canToggle}
+                                        className={cn(
+                                            "h-9 rounded-lg border border-border bg-background px-3 flex items-center gap-2 text-left transition-colors",
+                                            canToggle ? "hover:bg-surface-hover hover:border-border-hover" : "cursor-default"
+                                        )}
+                                        aria-label={canToggle ? `Switch AI provider (currently ${pConfig.label})` : `${isAnyAiConfigured ? pConfig.label : 'AI'} active`}
+                                    >
+                                        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", isAnyAiConfigured ? pConfig.dotClass : "bg-foreground/20")} />
+                                        <span className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-label text-foreground-muted truncate">
+                                            {isAnyAiConfigured ? `${pConfig.label} Active` : 'AI Inactive'}
+                                        </span>
+                                        {canToggle && (
+                                            <ChevronRightIcon width={11} height={11} strokeWidth={2} className="shrink-0 text-foreground-muted/40" />
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                                        className="h-9 w-9 rounded-lg border border-border bg-background text-foreground-muted hover:text-foreground hover:bg-surface-hover hover:border-border-hover transition-colors flex items-center justify-center"
+                                        aria-label="Switch color theme"
+                                    >
+                                        {mounted && (theme === 'dark'
+                                            ? <SunIcon width={15} height={15} strokeWidth={1.6} />
+                                            : <MoonIcon width={15} height={15} strokeWidth={1.6} />
+                                        )}
+                                    </button>
+                                </div>
                             </div>
+                        )}
 
-                            {/* Logout */}
-                            <button
-                                onClick={handleSignOut}
-                                className={cn(
-                                    "h-9 w-full rounded-lg flex items-center text-muted-foreground hover:text-foreground transition-all border border-transparent hover:border-border-hover hover:bg-surface-hover",
-                                    sidebarCollapsed ? "justify-center w-9 shrink-0" : "px-3"
-                                )}
-                            >
-                                <LogOutIcon width={16} height={16} strokeWidth={1.5} className="shrink-0" />
-                                {!sidebarCollapsed && <span className="text-label-lg font-medium uppercase tracking-label-xs ml-2.5 truncate">Log Out</span>}
-                            </button>
-                        </div>
+                        <button
+                            onClick={toggleSidebar}
+                            className={cn(
+                                "h-9 rounded-lg border border-transparent text-foreground-muted hover:text-foreground hover:bg-surface-hover transition-colors flex items-center",
+                                sidebarCollapsed ? "w-10 justify-center" : "w-full justify-center"
+                            )}
+                            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                        >
+                            <ChevronLeftIcon width={15} height={15} strokeWidth={1.6} className={cn("transition-transform duration-200", sidebarCollapsed && "rotate-180")} />
+                        </button>
                     </div>
-
-                    <div className="my-1 border-t border-border dark:border-white/[0.04] mx-4" />
-
-                    {/* Collapse Toggle */}
-                    <button
-                        onClick={toggleSidebar}
-                        className="group flex items-center justify-between h-10 px-4 mx-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-all duration-300 cursor-pointer mb-2 border border-transparent hover:border-border-subtle"
-                    >
-                        <div className="flex w-6 items-center justify-center shrink-0">
-                            <ChevronLeftIcon width={16} height={16} strokeWidth={1.5} className={cn("transition-transform duration-500", sidebarCollapsed ? "rotate-180 text-foreground-muted/70 dark:text-white/50" : "rotate-0 text-foreground-muted/50 dark:text-white/30 group-hover:text-foreground-muted dark:group-hover:text-white/60")} />
-                        </div>
-                    </button>
                 </div>
             </aside>
         </>

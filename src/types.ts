@@ -304,7 +304,6 @@ export interface FormSubmission {
   form_type: 'contact' | 'price-unlock' | string
   source_metadata: ResolvedSubmissionSource | null
   ip_address: string | null
-  is_read: boolean
   call_status?: CallStatus | null
   call_scheduled_for?: string | null
   call_completed_at?: string | null

@@ -4,38 +4,38 @@
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --surface: 0 0% 100%;
-    --surface-hover: 0 0% 96%;
-    --surface-active: 0 0% 92%;
-    --foreground: 222 47% 11%;
-    --foreground-muted: 215 14% 65%;
+    --background: 30 24% 96%;
+    --surface: 32 20% 98%;
+    --surface-hover: 28 18% 95%;
+    --surface-active: 28 16% 91%;
+    --foreground: 223 30% 16%;
+    --foreground-muted: 218 15% 46%;
     --foreground-inverse: 0 0% 93%;
     
-    --accent: 36 38% 63%;
+    --accent: 32 44% 56%;
     --accent-foreground: 0 0% 100%;
-    --accent-hover: 36 30% 55%;
-    --accent-muted: 36 38% 63%;
+    --accent-hover: 32 38% 49%;
+    --accent-muted: 32 38% 62%;
     
-    --border: 214 32% 91%;
-    --border-hover: 214 32% 80%;
-    --border-subtle: 214 32% 95%;
+    --border: 220 19% 84%;
+    --border-hover: 220 16% 72%;
+    --border-subtle: 220 18% 90%;
     
     /* Sidebar is always dark */
     --sidebar-bg: 222 47% 11%;
-    --sidebar-text: 215 14% 65%;
+    --sidebar-text: 216 16% 60%;
     --sidebar-text-active: 0 0% 100%;
-    --sidebar-accent: 36 38% 63%;
+    --sidebar-accent: 32 44% 56%;
     
     /* Status colors */
-    --success: 142 71% 45%;
-    --success-bg: 141 84% 93%;
-    --warning: 38 92% 50%;
-    --warning-bg: 48 96% 89%;
-    --error: 0 84% 60%;
-    --error-bg: 0 93% 94%;
-    --info: 217 91% 60%;
-    --info-bg: 214 100% 91%;
+    --success: 145 60% 36%;
+    --success-bg: 142 46% 91%;
+    --warning: 31 74% 40%;
+    --warning-bg: 36 86% 91%;
+    --error: 6 67% 49%;
+    --error-bg: 5 84% 93%;
+    --info: 218 62% 47%;
+    --info-bg: 214 90% 93%;
     
     /* Shadows */
     --shadow-soft: 0 4px 20px -2px rgb(0 0 0 / 0.05);
@@ -48,8 +48,8 @@
     --shadow-lead-dot: 0 0 4px hsl(var(--warning) / 0.5);
 
     /* Background images */
-    --background-login-dot-pattern: radial-gradient(circle at center, hsl(var(--foreground-muted)) 1px, transparent 1px);
-    --background-deploy-page: radial-gradient(ellipse 120% 80% at 50% -10%, hsl(var(--surface)) 0%, hsl(var(--background)) 55%);
+    --background-login-dot-pattern: radial-gradient(circle at center, hsl(var(--foreground-muted) / 0.4) 1px, transparent 1px);
+    --background-deploy-page: radial-gradient(ellipse 120% 80% at 50% -10%, hsl(var(--surface)) 0%, hsl(30 18% 94%) 55%);
     --shimmer-highlight: rgb(0 0 0 / 0.05);
     
     --radius-md: 0.5rem;   /* 8px */

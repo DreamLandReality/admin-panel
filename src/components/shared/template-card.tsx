@@ -24,12 +24,12 @@ export function TemplateCard({
   const inner = (
     <div
       className={cn(
-        'group rounded-xl bg-card overflow-hidden cursor-pointer',
+        'group rounded-xl border border-border bg-card overflow-hidden cursor-pointer',
         isSelected && 'ring-2 ring-foreground/20',
       )}
       onClick={!href ? () => onSelect?.(template) : undefined}
     >
-      <div className="aspect-card bg-muted relative overflow-hidden">
+      <div className="aspect-square bg-muted relative overflow-hidden">
         {thumbnail ? (
           <R2Image
             objectKey={thumbnail}

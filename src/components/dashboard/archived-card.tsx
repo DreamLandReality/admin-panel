@@ -26,9 +26,9 @@ export function ArchivedCard({
   return (
     <>
       <AnimatedCard index={index}>
-        <div className="group relative rounded-xl bg-card overflow-hidden">
+        <div className="group relative rounded-xl border border-border bg-card overflow-hidden">
           {/* Thumbnail */}
-          <div className="aspect-card bg-muted relative overflow-hidden">
+          <div className="aspect-square bg-muted relative overflow-hidden">
             <DeploymentThumbnail
               src={thumbnailSrc}
               alt={`${deployment.project_name} preview`}

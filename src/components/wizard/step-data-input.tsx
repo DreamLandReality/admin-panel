@@ -301,7 +301,7 @@ export function StepDataInput({
               placeholder="Luxury Heights Mumbai"
               autoFocus
               error={!!nameError}
-              className="text-xl focus:border-foreground"
+              className="text-xl focus:border-foreground focus:ring-foreground/10"
             />
             {nameError && <p className="mt-1.5 text-xs text-error">{nameError}</p>}
           </div>
@@ -379,7 +379,7 @@ export function StepDataInput({
         error={isOverLimit}
         warn={isNearLimit}
         charCount={{ current: charCount, max: MAX_CHARS, warn: WARN_CHARS }}
-        className="min-h-[280px] focus:border-foreground disabled:opacity-50 mb-1"
+        className="min-h-[280px] focus:border-foreground focus:ring-foreground/10 disabled:opacity-50 mb-1"
       />
 
       {pdfError && (

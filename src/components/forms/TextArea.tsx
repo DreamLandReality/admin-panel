@@ -10,7 +10,7 @@ export interface TextAreaProps extends React.TextareaHTMLAttributes<HTMLTextArea
 
 const variantMap = {
   panel: 'panel-input resize-y min-h-[60px]',
-  underline: 'w-full border-0 border-b bg-transparent px-0 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none transition-colors resize-none',
+  underline: 'w-full rounded-xl border border-border-subtle bg-background/80 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-border-hover focus:outline-none focus:ring-2 focus:ring-accent/15 transition-[border-color,box-shadow,background-color] resize-none',
   default: 'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border-hover transition-colors',
 } as const
 

@@ -1,6 +1,6 @@
-import type { EnquirySortColumn, EnquirySortDirection, EnquiryStatusFilter } from '@/services/enquiry'
+import type { EnquirySortColumn, EnquirySortDirection, LeadStatus } from '@/services/enquiry'
 
-export type StatusFilter = EnquiryStatusFilter
+export type LeadStatusFilter = 'all' | LeadStatus
 export type SortCol = EnquirySortColumn
 export type SortDir = EnquirySortDirection
 
@@ -9,7 +9,7 @@ export interface EnquiryProjectOption {
   name: string
 }
 
-export interface EnquirySourceFilterOption {
-  value: StatusFilter
+export interface EnquiryLeadStatusFilterOption {
+  value: LeadStatusFilter
   label: string
 }

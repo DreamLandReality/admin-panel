@@ -7,24 +7,28 @@ import { EnquiryFilterBar } from '@/components/enquiry/enquiry-filters'
 import { EnquiryPanel } from '@/components/enquiry/enquiry-panel'
 import { Pagination } from '@/components/enquiry/enquiry-pagination'
 import { EnquiryTable } from '@/components/enquiry/enquiry-table'
-import type { StatusFilter, SortCol, SortDir } from '@/components/enquiry/enquiry-types'
+import type { LeadStatusFilter, SortCol, SortDir } from '@/components/enquiry/enquiry-types'
 import { Skeleton } from '@/components/ui'
 import { ErrorState } from '@/components/feedback/ErrorState'
 import {
   useEnquiriesQuery,
-  useMarkEnquiryReadMutation,
-  useUpdateEnquiryFollowUpMutation,
+  useUpdateEnquiryLeadProgressMutation,
 } from '@/hooks/queries/use-enquiries-query'
-import { getUserRole } from '@/lib/auth/roles'
-import { createClient } from '@/lib/supabase/client'
-import type { EnquiryQuery, FollowUpUpdateInput } from '@/services/enquiry'
+import type { EnquiryQuery, LeadProgressUpdateInput } from '@/services/enquiry'
 import { useHeaderStore } from '@/stores/header-store'
 
 const PAGE_SIZE = 10
-const GRID = 'grid-cols-[6px_minmax(0,2.5fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_130px_110px_40px]'
+const GRID = 'grid-cols-[6px_minmax(0,2.1fr)_minmax(0,1.8fr)_minmax(0,1.6fr)_120px_120px_40px]'
+const LEAD_STATUS_FILTER_OPTIONS: Array<{ value: LeadStatusFilter; label: string }> = [
+  { value: 'all', label: 'All Leads' },
+  { value: 'new', label: 'New' },
+  { value: 'attended', label: 'Attended' },
+  { value: 'follow_up', label: 'Follow-up' },
+  { value: 'closed', label: 'Closed' },
+]
 
 export default function EnquiryPage() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [leadStatusFilter, setLeadStatusFilter] = useState<LeadStatusFilter>('all')
   const [propertyFilter, setPropertyFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState<SortCol>('date')
@@ -33,65 +37,43 @@ export default function EnquiryPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [propOpen, setPropOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
-  const [markingId, setMarkingId] = useState<string | null>(null)
   const [followUpSavingId, setFollowUpSavingId] = useState<string | null>(null)
-  const [canMarkRead, setCanMarkRead] = useState(false)
 
   const { setStats, clearStats } = useHeaderStore()
-  const supabase = useMemo(() => createClient(), [])
   const enquiryQuery = useMemo<EnquiryQuery>(() => ({
     page,
     pageSize: PAGE_SIZE,
-    status: statusFilter,
     property: propertyFilter,
     search,
     sort: sortCol,
     dir: sortDir,
-  }), [page, propertyFilter, search, sortCol, sortDir, statusFilter])
+    leadStatus: leadStatusFilter,
+  }), [leadStatusFilter, page, propertyFilter, search, sortCol, sortDir])
   const { data, isLoading, error, refetch } = useEnquiriesQuery(enquiryQuery)
-  const markReadMutation = useMarkEnquiryReadMutation()
-  const followUpMutation = useUpdateEnquiryFollowUpMutation()
+  const leadProgressMutation = useUpdateEnquiryLeadProgressMutation()
   const enquiries = useMemo(() => data?.data ?? [], [data?.data])
   const totalCount = data?.totalCount ?? 0
-  const unreadCount = data?.unreadCount ?? 0
+  const newLeadCount = data?.newLeadCount ?? 0
   const reloadEnquiries = useCallback(() => { void refetch() }, [refetch])
 
   useEffect(() => {
     if (!isLoading && !error) {
       setStats([
         { label: 'Total', value: totalCount },
-        { label: 'Unread', value: unreadCount, colorClass: unreadCount > 0 ? 'text-accent' : undefined },
+        { label: 'New', value: newLeadCount, colorClass: newLeadCount > 0 ? 'text-accent' : undefined },
       ])
     }
     return () => clearStats()
-  }, [clearStats, error, isLoading, setStats, totalCount, unreadCount])
+  }, [clearStats, error, isLoading, newLeadCount, setStats, totalCount])
 
-  const markRead = useCallback(async (id: string) => {
-    if (!canMarkRead) return
-    if (markingId === id) return
-    setMarkingId(id)
-    try {
-      await markReadMutation.mutateAsync(id)
-    } finally {
-      setMarkingId(null)
-    }
-  }, [canMarkRead, markReadMutation, markingId])
-
-  const markAllRead = useCallback(async () => {
-    if (!canMarkRead) return
-    const ids = enquiries.filter((e) => !e.is_read).map((e) => e.id)
-    if (!ids.length) return
-    await Promise.all(ids.map((id) => markReadMutation.mutateAsync(id)))
-  }, [canMarkRead, enquiries, markReadMutation])
-
-  const handleFollowUpUpdate = useCallback(async (id: string, input: FollowUpUpdateInput) => {
+  const handleLeadProgressUpdate = useCallback(async (id: string, input: LeadProgressUpdateInput) => {
     setFollowUpSavingId(id)
     try {
-      await followUpMutation.mutateAsync({ id, input })
+      await leadProgressMutation.mutateAsync({ id, input })
     } finally {
       setFollowUpSavingId(null)
     }
-  }, [followUpMutation])
+  }, [leadProgressMutation])
 
   useEffect(() => {
     if (!propOpen && !statusOpen) return
@@ -99,14 +81,6 @@ export default function EnquiryPage() {
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [propOpen, statusOpen])
-
-  useEffect(() => {
-    let mounted = true
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (mounted) setCanMarkRead(getUserRole(user) === 'admin')
-    })
-    return () => { mounted = false }
-  }, [supabase])
 
   const resetPage = useCallback(() => setPage(1), [])
 
@@ -127,28 +101,10 @@ export default function EnquiryPage() {
     }
   }, [enquiries, isLoading, selectedId])
 
-  const projects = useMemo(() => Array.from(
-    new Map(enquiries.map((e) => [
-      e.deployment_slug,
-      { slug: e.deployment_slug, name: e.deployments?.project_name ?? e.deployment_slug },
-    ])).values()
-  ), [enquiries])
-
-  const sourceFilterOptions = useMemo(() => Array.from(
-    new Map(enquiries.map((enquiry) => [
-      enquiry.source.id,
-      { value: `source:${enquiry.source.id}` as StatusFilter, label: enquiry.source.label },
-    ])).values()
-  ).sort((a, b) => a.label.localeCompare(b.label)), [enquiries])
-
-  const statusFilterOptions = useMemo(() => [
-    { value: 'all' as const, label: 'All' },
-    { value: 'unread' as const, label: 'New / Unread' },
-    ...sourceFilterOptions,
-  ], [sourceFilterOptions])
+  const projects = data?.properties ?? []
 
   const selectedEnquiry = enquiries.find((e) => e.id === selectedId) ?? null
-  const hasActiveFilters = search !== '' || statusFilter !== 'all' || propertyFilter !== 'all'
+  const hasActiveFilters = search !== '' || leadStatusFilter !== 'all' || propertyFilter !== 'all'
 
   if (isLoading) {
     return (
@@ -204,7 +160,7 @@ export default function EnquiryPage() {
     return (
       <EmptyState
         heading="No enquiries yet"
-        description="When visitors submit the contact or price unlock form on your deployed sites, their messages will appear here."
+        description="When visitors enquire from your deployed property sites, their messages and follow-up status will appear here."
       />
     )
   }
@@ -218,9 +174,9 @@ export default function EnquiryPage() {
         <EnquiryFilterBar
           search={search}
           onSearchChange={(value) => { setSearch(value); resetPage() }}
-          statusFilter={statusFilter}
-          onStatusFilterChange={(value) => { setStatusFilter(value); setStatusOpen(false); resetPage() }}
-          statusFilterOptions={statusFilterOptions}
+          leadStatusFilter={leadStatusFilter}
+          onLeadStatusFilterChange={(value) => { setLeadStatusFilter(value); setStatusOpen(false); resetPage() }}
+          leadStatusFilterOptions={LEAD_STATUS_FILTER_OPTIONS}
           statusOpen={statusOpen}
           onToggleStatusOpen={() => { setStatusOpen((v) => !v); setPropOpen(false) }}
           propertyFilter={propertyFilter}
@@ -228,11 +184,8 @@ export default function EnquiryPage() {
           projects={projects}
           propertyOpen={propOpen}
           onTogglePropertyOpen={() => { setPropOpen((v) => !v); setStatusOpen(false) }}
-          unreadCount={unreadCount}
           resultCount={totalCount}
           hasActiveFilters={hasActiveFilters}
-          canMarkRead={canMarkRead}
-          onMarkAllRead={markAllRead}
         />
 
         <EnquiryTable
@@ -256,12 +209,7 @@ export default function EnquiryPage() {
       <EnquiryPanel
         enquiry={selectedEnquiry}
         onClose={() => setSelectedId(null)}
-        onMarkRead={(id) => {
-          void markRead(id)
-        }}
-        canMarkRead={canMarkRead}
-        marking={markingId}
-        onUpdateFollowUp={handleFollowUpUpdate}
+        onUpdateLeadProgress={handleLeadProgressUpdate}
         followUpSaving={followUpSavingId === selectedEnquiry?.id}
       />
     </>

@@ -13,6 +13,9 @@ type FormSubmissionWithDeployment = FormSubmission & {
   deployments?: FormSubmissionDeployment | FormSubmissionDeployment[]
   call_status?: string | null
 }
+type PropertyOptionRow = Pick<FormSubmission, 'deployment_slug'> & {
+  deployments?: FormSubmissionDeployment | FormSubmissionDeployment[]
+}
 type SortColumn = 'name' | 'date' | 'property'
 type SortDirection = 'asc' | 'desc'
 type EnquiryAuth = Extract<Awaited<ReturnType<typeof requireCapability>>, { ok: true }>
@@ -87,11 +90,11 @@ function enrichSubmission(submission: FormSubmissionWithDeployment) {
   }
 }
 
-async function getUnreadCount(supabase: EnquirySupabaseClient) {
+async function getNewLeadCount(supabase: EnquirySupabaseClient) {
   const { count, error } = await supabase
     .from('form_submissions')
     .select('id', { count: 'exact', head: true })
-    .eq('is_read', false)
+    .eq('lead_status', 'new')
 
   if (error) throw new Error(error.message)
   return count ?? 0
@@ -127,6 +130,30 @@ async function getCallStats(supabase: EnquirySupabaseClient) {
   }
 }
 
+async function getPropertyOptions(supabase: EnquirySupabaseClient) {
+  const { data, error } = await supabase
+    .from('form_submissions')
+    .select('deployment_slug, deployments(project_name)')
+    .order('deployment_slug', { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return Array.from(
+    new Map(
+      ((data ?? []) as PropertyOptionRow[]).map((row) => {
+        const deployment = normalizeJoinedDeployment(row.deployments)
+        return [
+          row.deployment_slug,
+          {
+            slug: row.deployment_slug,
+            name: deployment?.project_name ?? row.deployment_slug,
+          },
+        ]
+      })
+    ).values()
+  )
+}
+
 /**
  * GET /api/enquiries
  * Returns one bounded form-submission page plus lightweight summary counts.
@@ -138,40 +165,39 @@ export async function GET(req: NextRequest) {
 
   const searchParams = req.nextUrl.searchParams
   const summaryOnly = searchParams.get('summary') === 'true'
-  let unreadCount: number
+  let newLeadCount: number
   let callStats: Awaited<ReturnType<typeof getCallStats>>
   try {
-    unreadCount = await getUnreadCount(supabase)
+    newLeadCount = await getNewLeadCount(supabase)
     callStats = await getCallStats(supabase)
   } catch (error) {
     return apiError(error instanceof Error ? error.message : 'Failed to load enquiry summary', 500)
   }
 
   if (summaryOnly) {
-    return apiData({ unreadCount, callStats })
+    return apiData({ newLeadCount, callStats })
   }
 
   const page = getBoundedInteger(searchParams.get('page'), 1, 1, Number.MAX_SAFE_INTEGER)
   const pageSize = getBoundedInteger(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
-  const status = searchParams.get('status') ?? 'all'
   const property = searchParams.get('property') ?? 'all'
   const search = getSearchTerm(searchParams.get('search'))
   const callStatus = searchParams.get('callStatus') ?? 'all'
   const leadStatus = searchParams.get('leadStatus') ?? 'all'
   const sort = getSortColumn(searchParams.get('sort'))
   const dir = getSortDirection(searchParams.get('dir'))
+  let properties: Awaited<ReturnType<typeof getPropertyOptions>>
+  try {
+    properties = await getPropertyOptions(supabase)
+  } catch (error) {
+    return apiError(error instanceof Error ? error.message : 'Failed to load enquiry filters', 500)
+  }
 
   let query = supabase
     .from('form_submissions')
     .select('*, deployments(project_name)', { count: 'exact' })
-
-  if (status === 'unread') {
-    query = query.eq('is_read', false)
-  } else if (status.startsWith('source:')) {
-    query = query.eq('source_metadata->>id', status.slice('source:'.length))
-  }
 
   if (property !== 'all') {
     query = query.eq('deployment_slug', property)
@@ -211,14 +237,15 @@ export async function GET(req: NextRequest) {
     page,
     pageSize,
     totalCount: count ?? 0,
-    unreadCount,
+    newLeadCount,
+    properties,
     callStats,
   })
 }
 
 /**
  * PATCH /api/enquiries
- * Supports mark-read and manual follow-up updates.
+ * Supports manual lead progress updates.
  */
 export async function PATCH(req: NextRequest) {
   const auth = await requireUser()
@@ -234,26 +261,9 @@ export async function PATCH(req: NextRequest) {
     return apiError('Missing id', 400)
   }
 
-  const action = typeof body.action === 'string' ? body.action : 'mark_read'
+  const action = typeof body.action === 'string' ? body.action : 'update_lead_status'
 
-  if (action === 'mark_read') {
-    if (role !== 'admin') {
-      return forbidden()
-    }
-
-    const { error } = await supabase
-      .from('form_submissions')
-      .update({ is_read: true })
-      .eq('id', id)
-
-    if (error) {
-      return apiError(error.message, 500)
-    }
-
-    return apiOk({ success: true })
-  }
-
-  if (action === 'update_follow_up') {
+  if (action === 'update_lead_status' || action === 'update_follow_up') {
     if (!hasCapability(role, 'canManageFollowUps')) {
       return forbidden()
     }

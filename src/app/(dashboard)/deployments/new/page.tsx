@@ -272,8 +272,8 @@ function NewDeploymentPageContent() {
     return (
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="rounded-xl overflow-hidden bg-card">
-            <Skeleton className="aspect-card w-full" />
+          <div key={i} className="rounded-xl border border-border overflow-hidden bg-card">
+            <Skeleton className="aspect-square w-full" />
             <div className="p-3">
               <Skeleton className="h-2.5 w-1/3 mb-1" />
               <Skeleton className="h-4 w-full mb-1.5" />
@@ -315,8 +315,8 @@ export default function NewDeploymentPage() {
   return (
     <Suspense fallback={<div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="rounded-xl overflow-hidden bg-card">
-          <Skeleton className="aspect-card w-full" />
+        <div key={i} className="rounded-xl border border-border overflow-hidden bg-card">
+          <Skeleton className="aspect-square w-full" />
           <div className="p-3">
             <Skeleton className="h-2.5 w-1/3 mb-1" />
             <Skeleton className="h-4 w-full mb-1.5" />

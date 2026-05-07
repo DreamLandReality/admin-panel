@@ -34,10 +34,12 @@ export default function TemplatesPage() {
     return (
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="space-y-3">
-            <Skeleton className="aspect-card w-full rounded-xl" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-3 w-1/2" />
+          <div key={i} className="rounded-xl border border-border overflow-hidden bg-card">
+            <Skeleton className="aspect-square w-full" />
+            <div className="p-3 space-y-1.5">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
           </div>
         ))}
       </div>

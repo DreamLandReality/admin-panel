@@ -1,12 +1,11 @@
 import type { ReactNode } from 'react'
 import {
-  CheckCheckIcon as CheckCheck,
   CheckIcon as Check,
   ChevronDownIcon as ChevronDown,
   SearchIcon as Search,
 } from '@/components/icons'
 import { cn } from '@/lib/utils/cn'
-import type { EnquiryProjectOption, EnquirySourceFilterOption, StatusFilter } from './enquiry-types'
+import type { EnquiryLeadStatusFilterOption, EnquiryProjectOption, LeadStatusFilter } from './enquiry-types'
 
 function FilterBtn({
   label, active, open, onToggle, children,
@@ -54,9 +53,9 @@ function DropItem({ selected, onClick, children }: { selected: boolean; onClick:
 interface EnquiryFilterBarProps {
   search: string
   onSearchChange: (value: string) => void
-  statusFilter: StatusFilter
-  onStatusFilterChange: (value: StatusFilter) => void
-  statusFilterOptions: EnquirySourceFilterOption[]
+  leadStatusFilter: LeadStatusFilter
+  onLeadStatusFilterChange: (value: LeadStatusFilter) => void
+  leadStatusFilterOptions: EnquiryLeadStatusFilterOption[]
   statusOpen: boolean
   onToggleStatusOpen: () => void
   propertyFilter: string
@@ -64,19 +63,16 @@ interface EnquiryFilterBarProps {
   projects: EnquiryProjectOption[]
   propertyOpen: boolean
   onTogglePropertyOpen: () => void
-  unreadCount: number
   resultCount: number
   hasActiveFilters: boolean
-  canMarkRead: boolean
-  onMarkAllRead: () => void
 }
 
 export function EnquiryFilterBar({
   search,
   onSearchChange,
-  statusFilter,
-  onStatusFilterChange,
-  statusFilterOptions,
+  leadStatusFilter,
+  onLeadStatusFilterChange,
+  leadStatusFilterOptions,
   statusOpen,
   onToggleStatusOpen,
   propertyFilter,
@@ -84,15 +80,12 @@ export function EnquiryFilterBar({
   projects,
   propertyOpen,
   onTogglePropertyOpen,
-  unreadCount,
   resultCount,
   hasActiveFilters,
-  canMarkRead,
-  onMarkAllRead,
 }: EnquiryFilterBarProps) {
   return (
-    <div className="flex items-center gap-2.5">
-      <label className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border bg-transparent cursor-text flex-1 focus-within:border-border-hover transition-colors">
+    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-surface/55 px-3 py-3">
+      <label className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border bg-background/80 cursor-text flex-1 focus-within:border-border-hover transition-colors">
         <Search size={11} strokeWidth={2} className="text-foreground-muted/50 shrink-0" />
         <input
           type="text"
@@ -104,25 +97,18 @@ export function EnquiryFilterBar({
       </label>
 
       <FilterBtn
-        label={statusFilterOptions.find((o) => o.value === statusFilter)?.label ?? 'All Status'}
-        active={statusFilter !== 'all'}
+        label={leadStatusFilterOptions.find((o) => o.value === leadStatusFilter)?.label ?? 'All Leads'}
+        active={leadStatusFilter !== 'all'}
         open={statusOpen}
         onToggle={onToggleStatusOpen}
       >
-        {statusFilterOptions.map((o) => (
+        {leadStatusFilterOptions.map((o) => (
           <DropItem
             key={o.value}
-            selected={statusFilter === o.value}
-            onClick={() => onStatusFilterChange(o.value)}
+            selected={leadStatusFilter === o.value}
+            onClick={() => onLeadStatusFilterChange(o.value)}
           >
-            <span className="flex items-center gap-2">
-              {o.value === 'unread' && unreadCount > 0 && (
-                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-warning/15 text-warning text-[9px] font-bold">
-                  {unreadCount}
-                </span>
-              )}
-              {o.label}
-            </span>
+            {o.label}
           </DropItem>
         ))}
       </FilterBtn>
@@ -143,19 +129,6 @@ export function EnquiryFilterBar({
           </DropItem>
         ))}
       </FilterBtn>
-
-      {canMarkRead && unreadCount > 0 && (
-        <>
-          <span className="w-px h-4 bg-border shrink-0 mx-0.5" />
-          <button
-            onClick={onMarkAllRead}
-            className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border text-[9px] font-bold uppercase tracking-widest text-foreground-muted hover:text-foreground hover:border-border-hover transition-all whitespace-nowrap"
-          >
-            <CheckCheck size={10} strokeWidth={2} />
-            Mark all read
-          </button>
-        </>
-      )}
 
       {hasActiveFilters ? (
         <span className="ml-auto text-micro font-medium uppercase tracking-label text-foreground-muted/50 tabular-nums">

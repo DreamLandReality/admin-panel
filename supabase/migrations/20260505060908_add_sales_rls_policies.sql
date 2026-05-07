@@ -44,7 +44,6 @@ BEGIN
     NEW.message IS DISTINCT FROM OLD.message OR
     NEW.source_url IS DISTINCT FROM OLD.source_url OR
     NEW.ip_address IS DISTINCT FROM OLD.ip_address OR
-    NEW.is_read IS DISTINCT FROM OLD.is_read OR
     NEW.created_at IS DISTINCT FROM OLD.created_at OR
     NEW.form_type IS DISTINCT FROM OLD.form_type OR
     NEW.source_metadata IS DISTINCT FROM OLD.source_metadata OR
@@ -95,8 +94,5 @@ CREATE TRIGGER trg_sales_form_submission_follow_up_guard
 
 ALTER TABLE public.voice_settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Admins can manage voice settings"
-  ON public.voice_settings
-  FOR ALL TO authenticated
-  USING (((select auth.jwt()) -> 'app_metadata' ->> 'user_role') = 'admin')
-  WITH CHECK (((select auth.jwt()) -> 'app_metadata' ->> 'user_role') = 'admin');
+DROP POLICY IF EXISTS "Admins can manage voice settings"
+  ON public.voice_settings;

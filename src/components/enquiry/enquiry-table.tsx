@@ -4,8 +4,8 @@ import {
   PhoneIcon as Phone,
 } from '@/components/icons'
 import { cn } from '@/lib/utils/cn'
-import { CallStatusBadge, StatusBadge, TypePill } from './enquiry-badges'
-import { formatDate, isLeadSourceAccent, timeAgo } from './enquiry-format'
+import { CallStatusBadge, LeadStatusBadge } from './enquiry-badges'
+import { formatDate, timeAgo } from './enquiry-format'
 import { TH } from './table-header'
 import type { Enquiry } from '@/services/enquiry'
 import type { SortCol, SortDir } from './enquiry-types'
@@ -36,14 +36,14 @@ export function EnquiryTable({
         <TH sortable col="name" active={sortCol === 'name'} dir={sortDir} onSort={onSort}>
           Client
         </TH>
-        <TH>Contact</TH>
         <TH sortable col="property" active={sortCol === 'property'} dir={sortDir} onSort={onSort}>
           Property
         </TH>
+        <TH>Contact</TH>
         <TH sortable col="date" active={sortCol === 'date'} dir={sortDir} onSort={onSort}>
           Submitted
         </TH>
-        <TH>Status</TH>
+        <TH>Lead</TH>
         <div />
       </div>
 
@@ -56,9 +56,8 @@ export function EnquiryTable({
       ) : (
         enquiries.map((enquiry) => {
           const projectName = enquiry.deployments?.project_name ?? enquiry.deployment_slug
-          const isSourceAccent = isLeadSourceAccent(enquiry.source)
-          const isUnread = !enquiry.is_read
           const isSelected = selectedId === enquiry.id
+          const isActiveLead = enquiry.lead_status === 'new' || enquiry.lead_status === 'follow_up'
 
           return (
             <div
@@ -67,11 +66,9 @@ export function EnquiryTable({
                 'relative border-b border-border/50 last:border-0 transition-colors duration-150 cursor-pointer group',
                 isSelected
                   ? 'bg-surface-active'
-                  : isUnread && isSourceAccent
-                    ? 'bg-warning/[0.015] hover:bg-warning/[0.03]'
-                    : isUnread
-                      ? 'bg-foreground/[0.008] hover:bg-surface-hover'
-                      : 'hover:bg-surface-hover'
+                  : isActiveLead
+                    ? 'bg-foreground/[0.008] hover:bg-surface-hover'
+                    : 'hover:bg-surface-hover'
               )}
               onClick={() => onSelect(isSelected ? null : enquiry.id)}
             >
@@ -79,19 +76,17 @@ export function EnquiryTable({
                 'absolute left-0 inset-y-0 w-[3px] transition-all duration-200',
                 isSelected
                   ? 'bg-foreground/40'
-                  : isUnread
-                    ? isSourceAccent ? 'bg-warning/70' : 'bg-foreground/20'
+                  : isActiveLead
+                    ? enquiry.lead_status === 'follow_up' ? 'bg-warning/70' : 'bg-foreground/25'
                     : 'bg-transparent'
               )} />
 
               <div className={cn('grid gap-4 px-4 py-4 items-center', gridClassName)}>
                 <div className="flex justify-center">
-                  {isUnread && (
+                  {isActiveLead && (
                     <span className={cn(
                       'w-1.5 h-1.5 rounded-full shrink-0',
-                      isSourceAccent
-                        ? 'bg-warning shadow-lead-dot'
-                        : 'bg-foreground/30'
+                      enquiry.lead_status === 'follow_up' ? 'bg-warning shadow-lead-dot' : 'bg-foreground/30'
                     )} />
                   )}
                 </div>
@@ -99,18 +94,24 @@ export function EnquiryTable({
                 <div className="min-w-0">
                   <p className={cn(
                     'font-serif leading-tight tracking-tight truncate transition-all duration-200',
-                    isUnread ? 'text-[17px] text-foreground' : 'text-[15px] text-foreground/55'
+                    isActiveLead ? 'text-[17px] text-foreground' : 'text-[15px] text-foreground/55'
                   )}>
                     {enquiry.name}
                   </p>
                   {enquiry.message && (
                     <p className={cn(
                       'text-micro font-medium truncate mt-0.5 transition-colors',
-                      isUnread ? 'text-foreground-muted/70' : 'text-foreground-muted/40'
+                      isActiveLead ? 'text-foreground-muted/70' : 'text-foreground-muted/40'
                     )}>
                       {enquiry.message}
                     </p>
                   )}
+                </div>
+
+                <div className="min-w-0 space-y-1.5">
+                  <p className="font-serif text-[15px] leading-tight tracking-tight truncate text-foreground">
+                    {projectName}
+                  </p>
                 </div>
 
                 <div className="min-w-0 space-y-1">
@@ -126,16 +127,6 @@ export function EnquiryTable({
                   )}
                 </div>
 
-                <div className="min-w-0 space-y-1.5">
-                  <p className={cn(
-                    'font-serif text-[15px] leading-tight tracking-tight truncate',
-                    isSourceAccent ? 'text-warning' : 'text-foreground'
-                  )}>
-                    {projectName}
-                  </p>
-                  <TypePill source={enquiry.source} />
-                </div>
-
                 <div>
                   <p className="text-micro uppercase tracking-label tabular-nums text-foreground-muted/70">
                     {formatDate(enquiry.created_at)}
@@ -146,7 +137,7 @@ export function EnquiryTable({
                 </div>
 
                 <div className="space-y-1">
-                  <StatusBadge isRead={enquiry.is_read} source={enquiry.source} />
+                  <LeadStatusBadge status={enquiry.lead_status} />
                   <CallStatusBadge status={enquiry.call_status} />
                 </div>
 

@@ -26,7 +26,7 @@ export function Pagination({ page, total, pageSize, onChange }: PaginationProps)
   }
 
   return (
-    <div className="flex items-center justify-between pt-4 border-t border-border mt-0">
+    <div className="flex items-center justify-between rounded-xl border border-border bg-surface/55 px-4 py-3">
       <p className="text-micro font-medium uppercase tracking-label text-foreground-muted/60 tabular-nums">
         {from}-{to} of {total}
       </p>

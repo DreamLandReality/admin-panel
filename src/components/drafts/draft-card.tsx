@@ -38,7 +38,7 @@ export function DraftCard({ draft, index }: { draft: DraftCardData; index: numbe
 
   return (
     <AnimatedCard index={index}>
-      <div className="group relative rounded-xl bg-card overflow-hidden cursor-pointer">
+      <div className="group relative rounded-xl border border-border bg-card overflow-hidden cursor-pointer">
         {/* Full-card link */}
         <Link
           href={href}
@@ -46,8 +46,8 @@ export function DraftCard({ draft, index }: { draft: DraftCardData; index: numbe
           aria-label={`Resume ${projectName}`}
         />
 
-        {/* Thumbnail — portrait aspect-card (4/5), matches DeploymentCard */}
-        <div className="aspect-card bg-muted relative overflow-hidden">
+        {/* Thumbnail — square aspect ratio, matches the other dashboard cards */}
+        <div className="aspect-square bg-muted relative overflow-hidden">
           {thumbnailSrc ? (
             <>
               {!imgLoaded && (

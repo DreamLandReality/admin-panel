@@ -23,6 +23,7 @@ export default function LoginPage() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState<string | null>(null)
+    const [errorField, setErrorField] = useState<'email' | 'password' | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [shake, setShake] = useState(false)
     const emailInputRef = useRef<HTMLInputElement>(null)
@@ -31,28 +32,35 @@ export default function LoginPage() {
     const validateForm = () => {
         if (!email.trim()) {
             setError('Email is required')
+            setErrorField('email')
             return false
         }
         if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email)) {
             setError('Enter a valid email address')
+            setErrorField('email')
             return false
         }
         if (email.length > 254) {
             setError('Email is too long')
+            setErrorField('email')
             return false
         }
         if (!password) {
             setError('Password is required')
+            setErrorField('password')
             return false
         }
         if (password.length < 8) {
             setError('Password must be at least 8 characters')
+            setErrorField('password')
             return false
         }
         if (password.length > 128) {
             setError('Password is too long')
+            setErrorField('password')
             return false
         }
+        setErrorField(null)
         return true
     }
 
@@ -73,6 +81,7 @@ export default function LoginPage() {
 
         setIsLoading(true)
         setError(null)
+        setErrorField(null)
 
         try {
             const { error: authError } = await supabase.auth.signInWithPassword({
@@ -93,6 +102,7 @@ export default function LoginPage() {
                     msg = 'Too many attempts. Please wait a few minutes and try again.'
                 }
                 setError(msg)
+                setErrorField('email')
                 emailInputRef.current?.focus()
                 return
             }
@@ -106,20 +116,21 @@ export default function LoginPage() {
             setIsLoading(false)
             triggerShake()
             setError('Unable to connect to the server. Check your internet connection and try again.')
+            setErrorField('email')
             emailInputRef.current?.focus()
         }
     }
 
     return (
         <MobileGate>
-        <div className="min-h-screen min-h-[100dvh] grid place-items-center bg-background relative overflow-hidden text-foreground antialiased">
+        <div className="min-h-screen min-h-[100dvh] grid place-items-center bg-background relative overflow-hidden px-6 text-foreground antialiased">
             {/* Dot pattern overlay (now simplified without inline logic) */}
             <div
                 className="absolute inset-0 pointer-events-none opacity-20 bg-login-dot-pattern bg-[length:24px_24px]"
             />
 
             <div className={cn(
-                "relative w-full max-w-[420px] lg:max-w-[480px] bg-surface border border-border-subtle rounded-xl shadow-soft px-8 py-12 lg:px-10 z-10",
+                "relative w-full max-w-md lg:max-w-lg bg-surface border border-border-subtle rounded-xl shadow-soft px-8 py-12 lg:px-10 z-10",
                 shake && "animate-shake"
             )}>
 
@@ -139,44 +150,48 @@ export default function LoginPage() {
                         <label className="block text-label uppercase tracking-label text-foreground-muted group-focus-within:text-accent transition-colors duration-200">
                             EMAIL
                         </label>
-                        <div className="relative">
-                            <TextInput
-                                ref={emailInputRef}
-                                variant="underline"
-                                type="email"
-                                id="login-email"
-                                name="email"
-                                autoComplete="email"
-                                required
-                                disabled={isLoading}
-                                value={email}
-                                onChange={(e) => { setEmail(e.target.value); setError(null) }}
-                                placeholder="admin@dreamlandrealty.com"
-                                className="h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                            />
-                            <div className="absolute bottom-0 left-0 h-[1px] w-0 bg-accent transition-all duration-500 ease-out group-focus-within:w-full" />
-                        </div>
+                        <TextInput
+                            ref={emailInputRef}
+                            variant="underline"
+                            type="email"
+                            id="login-email"
+                            name="email"
+                            autoComplete="email"
+                            required
+                            disabled={isLoading}
+                            error={errorField === 'email'}
+                            value={email}
+                            onChange={(e) => {
+                                setEmail(e.target.value)
+                                setError(null)
+                                if (errorField === 'email') setErrorField(null)
+                            }}
+                            placeholder="admin@dreamlandrealty.com"
+                            className="h-12 text-sm focus:border-accent focus:ring-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
                     </div>
 
                     <div className="group space-y-2 pt-2 mb-8">
                         <label className="block text-label uppercase tracking-label text-foreground-muted group-focus-within:text-accent transition-colors duration-200">
                             PASSWORD
                         </label>
-                        <div className="relative">
-                            <TextInput
-                                variant="underline"
-                                type="password"
-                                id="login-password"
-                                name="password"
-                                autoComplete="current-password"
-                                required
-                                disabled={isLoading}
-                                value={password}
-                                onChange={(e) => { setPassword(e.target.value); setError(null) }}
-                                className="h-12 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                            />
-                            <div className="absolute bottom-0 left-0 h-[1px] w-0 bg-accent transition-all duration-500 ease-out group-focus-within:w-full" />
-                        </div>
+                        <TextInput
+                            variant="underline"
+                            type="password"
+                            id="login-password"
+                            name="password"
+                            autoComplete="current-password"
+                            required
+                            disabled={isLoading}
+                            error={errorField === 'password'}
+                            value={password}
+                            onChange={(e) => {
+                                setPassword(e.target.value)
+                                setError(null)
+                                if (errorField === 'password') setErrorField(null)
+                            }}
+                            className="h-12 text-sm focus:border-accent focus:ring-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
                     </div>
 
                     <Button
@@ -185,7 +200,7 @@ export default function LoginPage() {
                         size="lg"
                         loading={isLoading}
                         disabled={isLoading}
-                        className="w-full h-12 rounded-none tracking-wide mt-2 active:scale-[0.98] focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface"
+                        className="w-full h-12 rounded-xl tracking-wide mt-2 active:scale-[0.98] focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface"
                     >
                         {isLoading ? null : 'Sign In'}
                     </Button>
