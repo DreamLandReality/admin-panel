@@ -13,13 +13,13 @@ const sizeConfig = {
   md: {
     wrapper: 'flex flex-col items-center justify-center py-24 text-center',
     iconSize: 'xl' as const,
-    heading: 'mb-3 font-serif text-2xl font-light text-foreground',
+    heading: 'mb-3 font-primary text-2xl font-light text-foreground',
     description: 'mb-8 max-w-sm text-sm leading-relaxed text-foreground-muted',
   },
   lg: {
     wrapper: 'flex flex-col items-center justify-center py-32 text-center',
     iconSize: 'xl' as const,
-    heading: 'mb-3 font-serif text-3xl font-light text-foreground',
+    heading: 'mb-3 font-primary text-3xl font-light text-foreground',
     description: 'mb-10 max-w-md text-base leading-relaxed text-foreground-muted',
   },
 } as const

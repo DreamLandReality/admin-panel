@@ -16,7 +16,7 @@ export default function GlobalError({
 
   return (
     <html>
-      <body className="bg-background text-foreground font-sans antialiased">
+      <body className="bg-background text-foreground font-primary antialiased">
         <ErrorState onRetry={reset} />
       </body>
     </html>

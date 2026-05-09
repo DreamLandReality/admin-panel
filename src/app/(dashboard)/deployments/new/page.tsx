@@ -70,7 +70,7 @@ function ActiveDeploymentGate({ deployment, isLikelyStuck, onCancelSuccess }: Ga
 
         {/* ── Heading ── */}
         <div className="text-center space-y-1.5">
-          <h2 className="font-serif text-xl text-foreground">
+          <h2 className="font-primary text-xl text-foreground">
             {isLikelyStuck ? 'Deployment May Be Stuck' : 'Deployment In Progress'}
           </h2>
           <p className="text-sm text-foreground-muted font-medium truncate px-2">

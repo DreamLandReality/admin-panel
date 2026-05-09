@@ -21,7 +21,7 @@ export function MobileGate({ children }: { children: React.ReactNode }) {
     return (
       <div className="fixed inset-0 z-[200] bg-background flex flex-col items-center justify-center p-8 text-center">
         <MonitorIcon className="w-10 h-10 text-accent mb-6" />
-        <h1 className="font-serif text-xl text-foreground">
+        <h1 className="font-primary text-xl text-foreground">
           Best experienced on a larger screen
         </h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-xs leading-relaxed">

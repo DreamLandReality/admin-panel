@@ -1,15 +1,15 @@
 import { cn } from '@/lib/utils/cn'
 
 const variantMap = {
-  display:       'font-serif text-5xl font-bold tracking-tight text-foreground',
-  h1:            'font-serif text-h1 font-semibold tracking-tight text-foreground',
-  h2:            'font-serif text-h2 font-semibold text-foreground',
-  h3:            'font-serif text-h3 font-semibold text-foreground',
-  'page-title':  'font-serif text-page-title tracking-tight text-foreground',
-  'modal-title': 'font-serif text-modal-title font-light text-foreground',
-  section:       'font-serif text-2xl font-light text-foreground',
-  logo:          'font-serif text-logo text-foreground dark:text-white leading-tight tracking-wide',
-  stat:          'font-serif text-3xl font-light tabular-nums leading-none',
+  display:       'font-primary text-5xl font-bold tracking-tight text-foreground',
+  h1:            'font-primary text-h1 font-semibold tracking-tight text-foreground',
+  h2:            'font-primary text-h2 font-semibold text-foreground',
+  h3:            'font-primary text-h3 font-semibold text-foreground',
+  'page-title':  'font-primary text-page-title tracking-tight text-foreground',
+  'modal-title': 'font-primary text-modal-title font-light text-foreground',
+  section:       'font-primary text-2xl font-light text-foreground',
+  logo:          'font-primary text-logo text-foreground dark:text-white leading-tight tracking-wide',
+  stat:          'font-primary text-3xl font-light tabular-nums leading-none',
 } as const
 
 const defaultTag: Record<keyof typeof variantMap, 'h1' | 'h2' | 'h3' | 'p' | 'span'> = {

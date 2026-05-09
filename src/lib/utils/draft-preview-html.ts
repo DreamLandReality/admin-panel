@@ -32,17 +32,21 @@ export function buildDraftPreviewHtml(params: {
 <head>
 <meta charset="utf-8">
 <style>
+  :root {
+    --font-primary: Georgia, 'Times New Roman', serif;
+    --font-secondary: 'Helvetica Neue', Arial, sans-serif;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     width: 1200px; height: 900px; overflow: hidden;
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: var(--font-primary);
     ${bgStyle}
     display: flex; flex-direction: column; justify-content: flex-end;
     padding: 64px; color: white;
   }
   .tag {
     font-size: 11px;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-secondary);
     letter-spacing: 0.25em; text-transform: uppercase;
     color: white; opacity: 0.45; margin-bottom: 20px;
   }
@@ -53,7 +57,7 @@ export function buildDraftPreviewHtml(params: {
   }
   .subtitle {
     font-size: 20px;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-secondary);
     font-weight: 300; color: white; opacity: 0.6;
     letter-spacing: 0.03em; max-width: 600px;
   }

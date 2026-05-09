@@ -55,9 +55,8 @@
     --radius-md: 0.5rem;   /* 8px */
     --radius-lg: 0.75rem;  /* 12px */
 
-    --font-sans: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-    --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --font-primary: var(--font-playfair-display), ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+    --font-secondary: ui-sans-serif, system-ui, sans-serif;
   }
 
   .dark {

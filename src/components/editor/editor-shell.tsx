@@ -235,7 +235,7 @@ export function EditorShell() {
 
   return (
     <>
-      <div className="dark fixed inset-0 bg-background flex flex-col z-50">
+      <div className="dark fixed inset-0 bg-background flex flex-col z-50 font-secondary">
         {/* Exit overlay to prevent flash */}
         {isExiting && (
           <div className="absolute inset-0 bg-background z-[60] animate-fade-in" />

@@ -316,12 +316,12 @@ export default function DeployPage() {
             <div className="space-y-5">
               <div className="text-center space-y-2.5">
                 <div className="w-12 h-12 rounded-2xl border border-white/10 bg-white/[0.04] flex items-center justify-center mx-auto">
-                  <span className="font-serif text-xl text-foreground/50">
+                  <span className="font-primary text-xl text-foreground/50">
                     {(projectName ?? 'P').charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <div>
-                  <h1 className="font-serif text-2xl text-foreground">{projectName || 'Untitled'}</h1>
+                  <h1 className="font-primary text-2xl text-foreground">{projectName || 'Untitled'}</h1>
                   <p className="text-sm text-muted-foreground/60 mt-1">
                     {isRedeploy ? 'Ready to publish your changes' : 'Ready to go live'}
                   </p>
@@ -346,7 +346,7 @@ export default function DeployPage() {
                   {!isRedeploy && (
                     <div className="flex justify-between gap-4">
                       <span className="text-muted-foreground/50">URL slug</span>
-                      <span className="text-foreground/80 font-mono text-xs truncate">{siteSlug}</span>
+                      <span className="text-foreground/80  text-xs truncate">{siteSlug}</span>
                     </div>
                   )}
                 </div>
@@ -417,7 +417,7 @@ export default function DeployPage() {
                 <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
                   <SpinnerCircleIcon width={18} height={18} strokeWidth={1.5} className="animate-spin text-foreground/40" />
                 </div>
-                <h1 className="font-serif text-2xl text-foreground">
+                <h1 className="font-primary text-2xl text-foreground">
                   {isRedeploy ? 'Publishing Changes' : 'Deploying Your Site'}
                 </h1>
               </div>
@@ -439,13 +439,13 @@ export default function DeployPage() {
                 <div className="w-10 h-10 rounded-full bg-success/10 border border-success/20 flex items-center justify-center mx-auto">
                   <CheckIcon width={18} height={18} strokeWidth={2} className="text-success" />
                 </div>
-                <h1 className="font-serif text-2xl text-foreground">Your Site is Live</h1>
+                <h1 className="font-primary text-2xl text-foreground">Your Site is Live</h1>
                 <p className="text-sm text-muted-foreground/60">Built and deployed successfully.</p>
               </div>
               {steps.length > 0 && <StepTrack steps={steps} />}
               {siteUrl && (
                 <div className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2.5">
-                  <p className="text-xs text-muted-foreground/70 font-mono break-all flex-1">{siteUrl}</p>
+                  <p className="text-xs text-muted-foreground/70  break-all flex-1">{siteUrl}</p>
                   <button
                     onClick={handleCopy}
                     className={cn(
@@ -471,7 +471,7 @@ export default function DeployPage() {
                 <div className="w-10 h-10 rounded-full bg-error/10 border border-error/20 flex items-center justify-center mx-auto">
                   <XIcon width={18} height={18} strokeWidth={2} className="text-error" />
                 </div>
-                <h1 className="font-serif text-2xl text-foreground">Deployment Failed</h1>
+                <h1 className="font-primary text-2xl text-foreground">Deployment Failed</h1>
                 <p className="text-sm text-muted-foreground/60">Something went wrong during deployment.</p>
               </div>
 

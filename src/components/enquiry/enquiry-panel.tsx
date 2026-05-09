@@ -167,7 +167,7 @@ export function EnquiryPanel({
                   <p className="text-[10px] font-semibold uppercase tracking-label-lg text-foreground-muted mb-2">
                     {formatDate(enquiry.created_at)} · {timeAgo(enquiry.created_at)}
                   </p>
-                  <h2 className="font-serif text-[28px] leading-tight text-foreground truncate">
+                  <h2 className="font-primary text-[28px] leading-tight text-foreground truncate">
                     {enquiry.name}
                   </h2>
                   <p className="mt-1 text-body-sm text-foreground-muted truncate">
@@ -254,7 +254,7 @@ export function EnquiryPanel({
               {customerMessage && (
                 <Section label="Customer message">
                   <div className="border-l-2 border-border pl-4">
-                    <p className="font-serif text-[15px] text-foreground/75 leading-relaxed whitespace-pre-wrap italic">
+                    <p className="font-primary text-[15px] text-foreground/75 leading-relaxed whitespace-pre-wrap italic">
                       {customerMessage}
                     </p>
                   </div>

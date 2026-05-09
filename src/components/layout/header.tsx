@@ -35,7 +35,7 @@ function HeaderRightContent({ content }: { content: HeaderRightContentData }) {
     if (content.kind === 'page-action') {
         return (
             <Link href={content.href} className="group text-center min-w-[52px]">
-                <p className="font-serif text-3xl font-light leading-none text-foreground-muted group-hover:text-foreground transition-colors duration-200">
+                <p className="font-primary text-3xl font-light leading-none text-foreground-muted group-hover:text-foreground transition-colors duration-200">
                     +
                 </p>
                 <p className="mt-1.5 text-micro font-bold uppercase tracking-label text-foreground-muted">
@@ -47,7 +47,7 @@ function HeaderRightContent({ content }: { content: HeaderRightContentData }) {
 
     return (
         <div className="text-center min-w-[52px]">
-            <p className="font-serif text-3xl font-light tabular-nums leading-none text-foreground">
+            <p className="font-primary text-3xl font-light tabular-nums leading-none text-foreground">
                 {content.currentStep}<span className="text-foreground-muted">/{content.totalSteps}</span>
             </p>
             <p className="mt-1.5 text-micro font-bold uppercase tracking-label text-foreground-muted">
@@ -80,7 +80,7 @@ export function Header() {
 
                 {/* Breadcrumbs */}
                 <div key={pathname} className="flex flex-col justify-center gap-1.5 animate-fade-in">
-                    <span className="font-sans text-overline text-foreground-muted whitespace-nowrap max-w-[400px] text-ellipsis overflow-hidden" title={overline}>
+                    <span className="font-primary text-overline text-foreground-muted whitespace-nowrap max-w-[400px] text-ellipsis overflow-hidden" title={overline}>
                         {overline}
                     </span>
                     <Heading variant="display">

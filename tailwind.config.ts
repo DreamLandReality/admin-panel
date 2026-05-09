@@ -4,6 +4,10 @@ const config: Config = {
   darkMode: 'class',
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
+    fontFamily: {
+      primary: ['var(--font-primary)', 'serif'],
+      secondary: ['var(--font-secondary)', 'sans-serif'],
+    },
     extend: {
       colors: {
         background: 'hsl(var(--background))',
@@ -38,11 +42,6 @@ const config: Config = {
         warning: { DEFAULT: 'hsl(var(--warning))', bg: 'hsl(var(--warning-bg))' },
         error: { DEFAULT: 'hsl(var(--error))', bg: 'hsl(var(--error-bg))' },
         info: { DEFAULT: 'hsl(var(--info))', bg: 'hsl(var(--info-bg))' },
-      },
-      fontFamily: {
-        sans: ['var(--font-sans)', 'sans-serif'],
-        serif: ['var(--font-serif)', 'serif'],
-        mono: ['var(--font-mono)', 'monospace'],
       },
       fontSize: {
         display: ['48px', { lineHeight: '1.2', fontWeight: '700' }],

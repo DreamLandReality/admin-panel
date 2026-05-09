@@ -111,18 +111,15 @@ export function Sidebar({ role }: { role: UserRole | null }) {
             >
                 <Link href="/" className="flex items-center h-20 border-b border-border/80 px-4 group overflow-hidden" onClick={closeMobile}>
                     <div className="flex w-10 h-10 items-center justify-center shrink-0 border border-border bg-surface-hover rounded-lg transition-colors duration-150 group-hover:bg-surface-active group-hover:border-border-hover">
-                        <span className="text-foreground font-serif text-sm font-semibold tracking-wider">DR</span>
+                        <span className="text-foreground font-primary text-sm font-semibold tracking-wider">DR</span>
                     </div>
 
                     <div className={cn(
-                        "ml-3 flex flex-col justify-center whitespace-nowrap transition-all duration-200",
+                        "ml-3 flex items-center whitespace-nowrap transition-all duration-200",
                         sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden ml-0' : 'w-auto opacity-100'
                     )}>
-                        <span className="font-serif text-[18px] leading-none text-foreground tracking-tight">
-                            Dream Land
-                        </span>
-                        <span className="text-[10px] font-semibold uppercase tracking-label-lg text-foreground-muted mt-1">
-                            Reality Admin
+                        <span className="font-primary text-[18px] leading-none text-foreground tracking-tight">
+                            Dream Land Reality
                         </span>
                     </div>
                 </Link>
@@ -178,7 +175,7 @@ export function Sidebar({ role }: { role: UserRole | null }) {
                         ) : (
                             <div className="rounded-lg border border-border bg-surface/55 p-3">
                                 <div className="flex items-center gap-2.5">
-                                    <div className="w-10 h-10 rounded-lg bg-background text-foreground/80 font-sans text-[11px] font-semibold uppercase tracking-widest flex items-center justify-center shrink-0 border border-border">
+                                    <div className="w-10 h-10 rounded-lg bg-background text-foreground/80 font-primary text-[11px] font-semibold uppercase tracking-widest flex items-center justify-center shrink-0 border border-border">
                                         {userEmail ? userEmail.split('@')[0].slice(0, 2).toUpperCase() : '??'}
                                     </div>
                                     <div className="min-w-0 flex-1">

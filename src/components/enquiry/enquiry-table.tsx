@@ -93,7 +93,7 @@ export function EnquiryTable({
 
                 <div className="min-w-0">
                   <p className={cn(
-                    'font-serif leading-tight tracking-tight truncate transition-all duration-200',
+                    'font-primary leading-tight tracking-tight truncate transition-all duration-200',
                     isActiveLead ? 'text-[17px] text-foreground' : 'text-[15px] text-foreground/55'
                   )}>
                     {enquiry.name}
@@ -109,7 +109,7 @@ export function EnquiryTable({
                 </div>
 
                 <div className="min-w-0 space-y-1.5">
-                  <p className="font-serif text-[15px] leading-tight tracking-tight truncate text-foreground">
+                  <p className="font-primary text-[15px] leading-tight tracking-tight truncate text-foreground">
                     {projectName}
                   </p>
                 </div>

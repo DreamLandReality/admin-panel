@@ -25,7 +25,7 @@ export function PanelColorInput({
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={cn('panel-input flex-1 font-mono')}
+          className={cn('panel-input flex-1 ')}
         />
       </div>
     </PanelField>

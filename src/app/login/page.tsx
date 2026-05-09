@@ -136,10 +136,10 @@ export default function LoginPage() {
 
                 <div className="flex flex-col items-center mb-10">
                     <Building2Icon className="w-8 h-8 text-accent mb-4" />
-                    <h1 className="font-serif text-4xl font-semibold text-foreground leading-tight tracking-tight mb-2 text-center">
+                    <h1 className="font-primary text-4xl font-semibold text-foreground leading-tight tracking-tight mb-2 text-center">
                         Dream Land Reality
                     </h1>
-                    <h2 className="font-sans text-label uppercase tracking-label text-foreground-muted leading-[1.4] text-center">
+                    <h2 className="font-primary text-label uppercase tracking-label text-foreground-muted leading-[1.4] text-center">
                         AI ARCHITECTURE SUITE
                     </h2>
                 </div>

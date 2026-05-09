@@ -267,7 +267,7 @@ export default function DeployProgressPage() {
                 <div className="w-10 h-10 rounded-full bg-success/10 border border-success/20 flex items-center justify-center mx-auto">
                   <CheckIcon width={18} height={18} strokeWidth={2} className="text-success" />
                 </div>
-                <h1 className="font-serif text-2xl text-foreground">Site is Live</h1>
+                <h1 className="font-primary text-2xl text-foreground">Site is Live</h1>
                 <p className="text-sm text-muted-foreground/70">Built and deployed successfully.</p>
               </>
             ) : isFailed ? (
@@ -275,7 +275,7 @@ export default function DeployProgressPage() {
                 <div className="w-10 h-10 rounded-full bg-error/10 border border-error/20 flex items-center justify-center mx-auto">
                   <XIcon width={18} height={18} strokeWidth={2} className="text-error" />
                 </div>
-                <h1 className="font-serif text-2xl text-foreground">Deployment Failed</h1>
+                <h1 className="font-primary text-2xl text-foreground">Deployment Failed</h1>
                 <p className="text-sm text-muted-foreground/70">Something went wrong during deployment.</p>
               </>
             ) : (
@@ -283,7 +283,7 @@ export default function DeployProgressPage() {
                 <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
                   <SpinnerCircleIcon width={18} height={18} strokeWidth={1.5} className="animate-spin text-foreground/40" />
                 </div>
-                <h1 className="font-serif text-2xl text-foreground">
+                <h1 className="font-primary text-2xl text-foreground">
                   {isRedeploy ? 'Publishing Changes' : 'Deploying Your Site'}
                 </h1>
               </>
@@ -309,7 +309,7 @@ export default function DeployProgressPage() {
           {/* ── Success: live URL with copy ── */}
           {isComplete && siteUrl && (
             <div className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.07] rounded-lg px-3 py-2.5">
-              <p className="text-xs text-muted-foreground/70 font-mono break-all flex-1">{siteUrl}</p>
+              <p className="text-xs text-muted-foreground/70  break-all flex-1">{siteUrl}</p>
               <button
                 onClick={handleCopy}
                 title="Copy URL"
